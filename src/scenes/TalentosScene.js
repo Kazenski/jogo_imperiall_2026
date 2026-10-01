@@ -6,7 +6,7 @@ import {
   talentoDisponivel,
   redefinirArvore,
 } from '../core/personagem.js';
-import { texto as uiTexto, titulo as uiTitulo, botao } from '../ui/comuns.js';
+import { texto as uiTexto, titulo as uiTitulo, botao, addTodos } from '../ui/comuns.js';
 
 const LARGURA_NO = 150;
 const ALTURA_NO = 62;
@@ -41,7 +41,7 @@ export class TalentosScene extends Phaser.Scene {
       this.mostrarToast(`${devolvidos} pontos devolvidos.`);
       this.desenhar();
     }, { largura: 180, cor: 0xc96a5a, corHover: 0xd05a5a, corTexto: '#fff' });
-    this.add.existing([btnRespec.caixa, btnRespec.label]);
+    addTodos(this, btnRespec.caixa, btnRespec.label);
 
     this.add.existing(
       botao(this, width - 90, 34, 'Fechar [T]', () => this.fechar(), { largura: 120 }).caixa,
@@ -76,7 +76,7 @@ export class TalentosScene extends Phaser.Scene {
         this.mostrarToast(`Vocação escolhida: ${c.nome}`);
         this.desenhar();
       }, { largura: 520, altura: 44, tamanho: '13px' });
-      this.add.existing([b.caixa, b.label]);
+      addTodos(this, b.caixa, b.label);
       y += 56;
     }
   }

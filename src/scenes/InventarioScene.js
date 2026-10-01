@@ -8,7 +8,7 @@ import {
   removerItem,
 } from '../core/personagem.js';
 import { usarOrbe, usarConsumivel } from '../core/regras.js';
-import { texto as uiTexto, titulo as uiTitulo, painel, botao, chip } from '../ui/comuns.js';
+import { texto as uiTexto, titulo as uiTitulo, painel, botao, chip, addTodos } from '../ui/comuns.js';
 
 const TAMANHO_CELULA = 52;
 const COLUNAS = 8;
@@ -44,7 +44,8 @@ export class InventarioScene extends Phaser.Scene {
 
     // ----- cofre de Orbes -----
     this.add.existing(uiTexto(this, this.x0 + 24, this.y0 + 54, 'Orbes Arcanos:', { fontSize: '13px', color: OURO }));
-    this.add.existing(this.criarBarraOrbes(this.x0 + 24, this.y0 + 76, w - 48));
+    // criarBarraOrbes ja adiciona os objetos na cena e nao devolve nada.
+    this.criarBarraOrbes(this.x0 + 24, this.y0 + 76, w - 48);
 
     // ----- grade -----
     this.gradeY = this.y0 + 118;
@@ -120,7 +121,7 @@ export class InventarioScene extends Phaser.Scene {
         .text(x + 4, y + 4, '', { fontFamily: 'system-ui, sans-serif', fontSize: '10px', color: OURO })
         .setOrigin(0, 0);
 
-      this.add.existing([caixa, img, qtd, orbeNivel]);
+      addTodos(this, caixa, img, qtd, orbeNivel);
       this.celulas.push({ caixa, img, qtd, orbeNivel });
 
       caixa.on('pointerdown', () => {

@@ -26,12 +26,42 @@ export function titulo(scene, x, y, conteudo, tamanho = '18px') {
   });
 }
 
-/** Painel de fundo com moldura, ancorado pelo canto superior esquerdo. */
+/**
+ * Painel de fundo com moldura, ancorado pelo canto superior esquerdo.
+ *
+ * Feito com retangulos (e nao nine-slice) de proposito: `scene.add.nineSlice`
+ * so existe se o plugin NineSlice do Phaser for registrado, e isso depende de
+ * caminhos internos da biblioteca. Retangulo funciona sempre.
+ */
 export function painel(scene, x, y, largura, altura, preenchimento = 0x14100c, alfa = 0.96) {
-  return scene.add
-    .nineSlice(x, y, 'painel', null, largura, altura, 10, 10, 10, 10)
-    .setOrigin(0, 0)
-    .setFillStyle(preenchimento, alfa);
+  const container = scene.add.container(x, y);
+
+  container.add(
+    scene.add.rectangle(largura / 2, altura / 2, largura, altura, preenchimento, alfa),
+  );
+  // moldura dupla
+  container.add(
+    scene.add.rectangle(largura / 2, altura / 2, largura, altura).setStrokeStyle(2, 0x8a6a2f),
+  );
+  container.add(
+    scene.add
+      .rectangle(largura / 2, altura / 2, largura - 10, altura - 10)
+      .setStrokeStyle(1, 0xd4af6a, 0.35),
+  );
+
+  return container;
+}
+
+/**
+ * Adiciona varios Game Objects de uma vez.
+ *
+ * `scene.add.existing` aceita UM objeto por chamada; passar um array ali quebra a
+ * cena em runtime (o objeto entra sem canvas/textura). Use este helper.
+ */
+export function addTodos(scene, ...objetos) {
+  const lista = objetos.flat().filter(Boolean);
+  for (const obj of lista) scene.add.existing(obj);
+  return lista;
 }
 
 /** Botao com texto. Retorna { caixa, label, destroy }. */

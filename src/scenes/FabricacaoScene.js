@@ -4,7 +4,7 @@ import { buscarItem } from '../core/catalogo.js';
 import { ESTAÇÕES } from '../core/enums.js';
 import { receitasDaEstacao } from '../core/catalogo.js';
 import { fabricar, podeFabricar } from '../core/regras.js';
-import { texto as uiTexto, titulo as uiTitulo, linhaLista, botao } from '../ui/comuns.js';
+import { texto as uiTexto, titulo as uiTitulo, linhaLista, botao, addTodos } from '../ui/comuns.js';
 
 const ROTULOS_ESTACAO = {
   banco_trabalho: 'Banco de Trabalho',
@@ -60,7 +60,7 @@ export class FabricacaoScene extends Phaser.Scene {
         corTexto: ativa ? '#14100c' : PERGAMINHO,
         origem: [0, 0.5],
       });
-      this.add.existing([b.caixa, b.label]);
+      addTodos(this, b.caixa, b.label);
       x += b.caixa.width + 8;
     }
 

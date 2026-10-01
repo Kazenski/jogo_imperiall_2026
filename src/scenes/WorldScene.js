@@ -225,9 +225,11 @@ export class WorldScene extends Phaser.Scene {
 
     const monstro = { corpo, def, stats: dados, alvo: null, cooldown: 0 };
 
-    // Barra de vida flutuante.
+    // Barra de vida flutuante. Fica em coordenadas de MUNDO (mesmo scroll do
+    // corpo), senao o scrollFactor 0 a prenderia na tela.
     monstro.barraVida = barra(this, x - 16, y - 34, 32, 4, 0xd05a5a, 1);
-    monstro.barraVida.fundo.setScrollFactor(0).setDepth(1000);
+    monstro.barraVida.fundo.setDepth(y + 1);
+    monstro.barraVida.frente.setDepth(y + 1);
 
     corpo.setDepth(y);
     this.monstros.push(monstro);
