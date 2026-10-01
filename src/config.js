@@ -27,3 +27,4 @@ export const NOME_COLECAO_BASES = 'bases';
 export const NOME_COLECAO_PORTAIS = 'portais';
 
 export const CHAVE_PROGRESSO_LOCAL = 'jogo-imperiall:progresso';
+export const CHAVE_PERFIL_LOCAL = 'jogo-imperiall:perfil';

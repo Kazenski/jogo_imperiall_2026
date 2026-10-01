@@ -1,44 +1,113 @@
 rules_version = '2';
 
-// Regras do Firestore do Jogo Imperial.
-//
-// Modelo de dados:
-//   /jogadores/{uid}  -> progresso PRIVADO (xp, ouro, base, stats). So o dono.
-//   /portais/{uid}    -> dados PUBLICOS minimos para o portal aparecer na
-//                        lista de amigos. Leitura por qualquer autenticado.
-//
-// Este arquivo faz parte do repo: qualquer pessoa com acesso ao repo pode
-// ler estas regras, entao NUNCA coloque segredo aqui. Apenas regras.
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // ---------- progresso privado ----------
-    match /jogadores/{uid} {
-      allow get, create, update, delete: if request.auth != null
-                                        && request.auth.uid == uid;
-      // Uma query que liste a colecao inteira e barrada de proposito:
-      // isso impede ler o progresso dos outros.
+    // Helper para verificar se o requisitante é admin
+    function isAdmin() {
+      return request.auth != null
+        && exists(/databases/$(database)/documents/system/admins)
+        && request.auth.uid in get(/databases/$(database)/documents/system/admins).data.uids;
     }
 
-    // ---------- portais publicos ----------
-    match /portais/{uid} {
-      // Qualquer jogador autenticado pode ver os portais ativos.
+    // Helper para verificar se é o próprio dono do documento
+    function isOwner(uid) {
+      return request.auth != null && request.auth.uid == uid;
+    }
+
+    // ---------- Sistema / Admins ----------
+    match /system/{docId} {
+      // Qualquer usuário autenticado pode ler (necessário para checar role no cliente)
       allow read: if request.auth != null;
 
-      // So o dono cria/edita/apaga o proprio portal.
-      allow create, update, delete: if request.auth != null
-                                  && request.auth.uid == uid
-                                  && request.resource.data.uid == uid;
+      // Apenas admins podem escrever em documentos de sistema
+      allow create, update, delete: if isAdmin();
     }
 
-    // Subcolecoes futuras (inventario, construcoes da base, etc.)
-    // sao sempre subordinates ao documento do jogador, entao herdam a regra.
+    // ---------- Usuários ----------
+    match /users/{uid} {
+      // Dono pode ler seu próprio perfil. Admin pode ler qualquer perfil.
+      allow get: if isOwner(uid) || isAdmin();
+      // Lista de usuários: apenas admins
+      allow list: if isAdmin();
+
+      // Criação: o próprio usuário pode criar seu perfil no primeiro login
+      allow create: if isOwner(uid)
+                    && request.resource.data.uid == uid
+                    && request.resource.data.role == 'jogador';
+
+      // Atualização: dono pode editar campos de perfil (exceto role/admin forçados).
+      // Admin pode editar qualquer campo (inclusive promover/rebaixar).
+      allow update: if (isOwner(uid) && request.resource.data.role == resource.data.role)
+                    || isAdmin();
+
+      // Exclusão: apenas admins (protege último admin via lógica de app)
+      allow delete: if isAdmin();
+    }
+
+    // ---------- Catálogo (leitura pública p/ cliente, escrita apenas Admin) ----------
+    match /classes/{id} {
+      allow read: if request.auth != null;
+      allow create, update, delete: if isAdmin();
+    }
+
+    match /skills/{id} {
+      allow read: if request.auth != null;
+      allow create, update, delete: if isAdmin();
+    }
+
+    match /items/{id} {
+      allow read: if request.auth != null;
+      allow create, update, delete: if isAdmin();
+    }
+
+    match /recipes/{id} {
+      allow read: if request.auth != null;
+      allow create, update, delete: if isAdmin();
+    }
+
+    match /monsters/{id} {
+      allow read: if request.auth != null;
+      allow create, update, delete: if isAdmin();
+    }
+
+    match /worldTemplates/{id} {
+      allow read: if request.auth != null;
+      allow create, update, delete: if isAdmin();
+    }
+
+    match /achievements/{id} {
+      allow read: if request.auth != null;
+      allow create, update, delete: if isAdmin();
+    }
+
+    // ---------- Portais (públicos entre amigos) ----------
+    match /portais/{uid} {
+      // Qualquer jogador autenticado pode ver portais ativos/lista
+      allow read: if request.auth != null;
+
+      // Apenas o dono cria/atualiza/apaga seu próprio portal
+      allow create, update, delete: if isOwner(uid)
+                                    && request.resource.data.uid == uid;
+    }
+
+    // ---------- Progresso privado do jogador ----------
+    match /jogadores/{uid} {
+      // Apenas dono lê/escreve seu progresso
+      allow get, create, update, delete: if isOwner(uid);
+    }
+
+    // Subcoleções do jogador (futuro: inventario, blocos da base, etc.)
     match /jogadores/{uid}/{subcollection}/{docId} {
-      allow read, write: if request.auth != null
-                          && request.auth.uid == uid;
+      allow read, write: if isOwner(uid);
     }
 
-    // Qualquer outra colecao: bloqueada por padrao.
+    match /bases/{uid} {
+      // Base/worldstate privada do dono
+      allow read, write: if isOwner(uid);
+    }
+
+    // Bloqueio padrão
     match /{document=**} {
       allow read, write: if false;
     }

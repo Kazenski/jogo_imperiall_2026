@@ -27,6 +27,8 @@ export class WorldScene extends Phaser.Scene {
     this.uid = dados?.uid ?? null;
     this.podeSair = dados?.podeSair ?? false;
     this.progresso = dados?.progresso ?? null;
+    this.perfil = dados?.perfil ?? null;
+    this.isAdmin = dados?.isAdmin ?? false;
   }
 
   create() {
@@ -216,7 +218,7 @@ export class WorldScene extends Phaser.Scene {
       .text(
         this.scale.width - 18,
         16,
-        'WASD/setas: andar   E: portais   B: base visivel   ESC: sair',
+        'WASD/setas: andar   E: portais   B: base visivel   ESC: sair' + (this.isAdmin ? '   F2: admin' : ''),
         { fontFamily: 'system-ui, sans-serif', fontSize: '12px', color: PERGAMINHO, align: 'right' },
       )
       .setOrigin(1, 0)
@@ -293,6 +295,17 @@ export class WorldScene extends Phaser.Scene {
       await salvarProgresso(this.uid, { nome: this.progresso.nome });
       await sairDaConta();
       this.scene.start('Login');
+    });
+
+    this.input.keyboard.on('keydown-F2', () => {
+      if (this.isAdmin) {
+        if (this.scene.isActive('Admin')) {
+          this.scene.stop('Admin');
+          return;
+        }
+        this.scene.pause('World');
+        this.scene.launch('Admin');
+      }
     });
   }
 

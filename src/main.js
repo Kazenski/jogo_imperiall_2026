@@ -2,6 +2,7 @@ import Phaser from 'phaser';
 import { BootScene } from './scenes/BootScene.js';
 import { LoginScene } from './scenes/LoginScene.js';
 import { WorldScene } from './scenes/WorldScene.js';
+import { AdminScene } from './scenes/AdminScene.js';
 
 const config = {
   type: Phaser.AUTO,
@@ -26,7 +27,7 @@ const config = {
       debug: false,
     },
   },
-  scene: [BootScene, LoginScene, WorldScene],
+  scene: [BootScene, LoginScene, WorldScene, AdminScene],
 };
 
 const game = new Phaser.Game(config);

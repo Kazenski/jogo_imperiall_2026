@@ -8,6 +8,7 @@ import {
 } from '../core/firebase.js';
 import { carregarProgresso, salvarProgresso } from '../core/progresso.js';
 import { OURO, PERGAMINHO } from '../constants.js';
+import { garantirPerfil, ehAdmin } from '../core/usuarios.js';
 
 export class LoginScene extends Phaser.Scene {
   constructor() {
@@ -176,12 +177,26 @@ export class LoginScene extends Phaser.Scene {
       progresso = await salvarProgresso(uid, {});
     }
 
+    // Garante perfil com role + verifica admin
+    let perfil = null;
+    let isAdminUser = false;
+    if (uid) {
+      try {
+        perfil = await garantirPerfil(user);
+        isAdminUser = await ehAdmin(uid);
+      } catch (e) {
+        console.warn('[Login] nao foi possivel garantir perfil:', e);
+      }
+    }
+
     this.scene.start('World', {
       uid,
       nome,
       email: user?.email ?? null,
       podeSair: Boolean(uid),
       progresso,
+      perfil,
+      isAdmin: isAdminUser,
     });
   }
 }
