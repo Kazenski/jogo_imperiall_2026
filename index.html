@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#1a1410" />
+    <meta name="description" content="Jogo Imperial — aventura 2D medieval com portais para as bases dos amigos." />
+    <title>Jogo Imperial</title>
+    <style>
+      :root {
+        --ink: #f2e6d0;
+        --gold: #d4af6a;
+        --bg: #14100c;
+      }
+
+      * { box-sizing: border-box; }
+
+      html, body {
+        margin: 0;
+        padding: 0;
+        height: 100%;
+        overflow: hidden;
+        background: var(--bg);
+        color: var(--ink);
+        font-family: 'Iowan Old Style', 'Palatino Linotype', Palatino, Georgia, serif;
+      }
+
+      #game {
+        width: 100%;
+        height: 100%;
+      }
+
+      #game canvas {
+        display: block;
+        image-rendering: pixelated;
+      }
+
+      /* Tela de carregamento antes do Phaser assumir o controle */
+      #boot {
+        position: fixed;
+        inset: 0;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 18px;
+        z-index: 10;
+        transition: opacity 0.4s ease;
+      }
+
+      #boot.oculto { opacity: 0; pointer-events: none; }
+
+      #boot h1 {
+        margin: 0;
+        font-size: clamp(28px, 6vw, 52px);
+        letter-spacing: 0.14em;
+        text-transform: uppercase;
+        color: var(--gold);
+        text-shadow: 0 2px 0 #000, 0 0 24px rgba(212, 175, 106, 0.35);
+      }
+
+      #boot p {
+        margin: 0;
+        font-size: 14px;
+        opacity: 0.75;
+        letter-spacing: 0.06em;
+      }
+
+      .barra {
+        width: min(280px, 70vw);
+        height: 6px;
+        border: 1px solid rgba(212, 175, 106, 0.4);
+        border-radius: 999px;
+        overflow: hidden;
+      }
+
+      .barra::after {
+        content: '';
+        display: block;
+        width: 40%;
+        height: 100%;
+        background: var(--gold);
+        animation: desliza 1.2s ease-in-out infinite;
+      }
+
+      @keyframes desliza {
+        0%   { transform: translateX(-100%); }
+        100% { transform: translateX(350%); }
+      }
+    </style>
+  </head>
+  <body>
+    <div id="game"></div>
+
+    <div id="boot">
+      <h1>Jogo Imperial</h1>
+      <div class="barra"></div>
+      <p>forjando o reino&hellip;</p>
+    </div>
+
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>

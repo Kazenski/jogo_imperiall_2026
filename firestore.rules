@@ -1,0 +1,46 @@
+rules_version = '2';
+
+// Regras do Firestore do Jogo Imperial.
+//
+// Modelo de dados:
+//   /jogadores/{uid}  -> progresso PRIVADO (xp, ouro, base, stats). So o dono.
+//   /portais/{uid}    -> dados PUBLICOS minimos para o portal aparecer na
+//                        lista de amigos. Leitura por qualquer autenticado.
+//
+// Este arquivo faz parte do repo: qualquer pessoa com acesso ao repo pode
+// ler estas regras, entao NUNCA coloque segredo aqui. Apenas regras.
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ---------- progresso privado ----------
+    match /jogadores/{uid} {
+      allow get, create, update, delete: if request.auth != null
+                                        && request.auth.uid == uid;
+      // Uma query que liste a colecao inteira e barrada de proposito:
+      // isso impede ler o progresso dos outros.
+    }
+
+    // ---------- portais publicos ----------
+    match /portais/{uid} {
+      // Qualquer jogador autenticado pode ver os portais ativos.
+      allow read: if request.auth != null;
+
+      // So o dono cria/edita/apaga o proprio portal.
+      allow create, update, delete: if request.auth != null
+                                  && request.auth.uid == uid
+                                  && request.resource.data.uid == uid;
+    }
+
+    // Subcolecoes futuras (inventario, construcoes da base, etc.)
+    // sao sempre subordinates ao documento do jogador, entao herdam a regra.
+    match /jogadores/{uid}/{subcollection}/{docId} {
+      allow read, write: if request.auth != null
+                          && request.auth.uid == uid;
+    }
+
+    // Qualquer outra colecao: bloqueada por padrao.
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
