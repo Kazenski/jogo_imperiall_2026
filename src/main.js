@@ -7,6 +7,7 @@ import { InventarioScene } from './scenes/InventarioScene.js';
 import { TalentosScene } from './scenes/TalentosScene.js';
 import { FabricacaoScene } from './scenes/FabricacaoScene.js';
 import { ReinosScene } from './scenes/ReinosScene.js';
+import { StatusScene } from './scenes/StatusScene.js';
 
 const config = {
   type: Phaser.AUTO,
@@ -39,6 +40,7 @@ const config = {
     TalentosScene,
     FabricacaoScene,
     ReinosScene,
+    StatusScene,
     AdminScene,
   ],
 };

@@ -1,7 +1,7 @@
 // Helpers de UI reutilizaveis entre as cenas do Impérium.
 // Todos devolvem Game Objects do Phaser (a cena decide se embrulha em container).
 
-import { Math as PhaserMath, Events as PhaserEvents } from 'phaser';
+import { Math as PhaserMath, Scenes as PhaserCenas } from 'phaser';
 import { OURO, PERGAMINHO } from '../constants.js';
 
 export const FONTE_TITULO = { fontFamily: 'Georgia, serif' };
@@ -346,7 +346,13 @@ export function barra(scene, x, y, largura, altura, cor, pct = 1) {
  * Campo de texto com cantos arredondados.
  *
  * O Phaser nao tem input de texto proprio, entao usamos um <input> do DOM
- * sobreposto ao canvas. Devolve uma funcao `focar()` e o elemento DOM.
+ * sobreposto ao canvas.
+ *
+ * Posicionamento: com `Scale.RESIZE` e `width/height: '100%'`, UMA unidade da
+ * cena equivale a UM pixel CSS. Multiplicar por `devicePixelRatio` (como se
+ * fosse o modo FIT) jogava o campo para fora da tela. Ainda assim medimos o
+ * `getBoundingClientRect` do canvas, porque ele pode estar deslocado dentro
+ * do elemento pai.
  */
 export function campoTexto(scene, x, y, largura, altura, valor = '', opcoes = {}) {
   const {
@@ -372,36 +378,69 @@ export function campoTexto(scene, x, y, largura, altura, valor = '', opcoes = {}
   input.spellcheck = false;
 
   const canvas = scene.game.canvas;
-  const escala = PhaserMath.Clamp(window.devicePixelRatio || 1, 1, 2);
+  const pai = canvas.parentElement;
+
+  const posicionar = () => {
+    if (!pai) return;
+    const c = canvas.getBoundingClientRect();
+    const p = pai.getBoundingClientRect();
+    const alturaInput = Math.max(12, Math.min(26, altura - 4));
+    input.style.left = `${c.left - p.left + x + 8}px`;
+    input.style.top = `${c.top - p.top + y + (altura - alturaInput) / 2}px`;
+    input.style.width = `${Math.max(0, largura - 16)}px`;
+    input.style.height = `${alturaInput}px`;
+  };
+
   Object.assign(input.style, {
     position: 'absolute',
-    left: `${x * escala + 10}px`,
-    top: `${y * escala + (altura - 26 * escala) / 2}px`,
-    width: `${(largura - 20) * escala}px`,
-    height: `${26 * escala}px`,
     background: 'transparent',
     border: 'none',
     outline: 'none',
     color: PERGAMINHO,
-    font: `${13 * escala}px system-ui, sans-serif`,
+    font: '13px system-ui, sans-serif',
     textAlign: 'center',
-    zIndex: 20,
+    padding: '0',
+    margin: '0',
+    zIndex: '20',
   });
+  posicionar();
 
-  canvas.parentElement.appendChild(input);
+  if (pai) pai.appendChild(input);
 
-  const limpar = () => input.remove();
-  scene.events.once(PhaserEvents.SHUTDOWN, limpar);
+  // `Enter` seguido de `blur` dispararia `aoConfirmar` duas vezes sem este flag.
+  let confirmado = false;
+
+  // `Phaser.Scenes.Events.SHUTDOWN` e nao `Phaser.Events.SHUTDOWN`: o segundo
+  // nao existe nesta build e vale `undefined`, o que registra o listener sob a
+  // chave "undefined" e nunca dispara — o <input> ficaria no DOM para sempre.
+  const limpar = () => {
+    scene.scale.off(Phaser.Scale.Events.RESIZE, posicionar);
+    input.remove();
+  };
+  scene.events.once(PhaserCenas.Events.SHUTDOWN, limpar);
+  scene.scale.on(Phaser.Scale.Events.RESIZE, posicionar);
 
   input.addEventListener('keydown', (ev) => {
+    // Sem isso, digitar "i" abriria a Mochila e "v" o painel do personagem.
     ev.stopPropagation();
     if (ev.key === 'Enter') {
-      input.blur();
+      ev.preventDefault();
+      confirmado = true;
       aoConfirmar?.(input.value.trim());
+      input.blur();
+    } else if (ev.key === 'Escape') {
+      input.value = valor; // cancela e devolve o valor original
+      confirmado = true;
+      input.blur();
     }
-    if (ev.key === 'Escape') input.blur();
   });
-  input.addEventListener('blur', () => aoConfirmar?.(input.value.trim()));
+  input.addEventListener('blur', () => {
+    if (confirmado) return;
+    confirmado = true;
+    aoConfirmar?.(input.value.trim());
+  });
+  // Impede que o clique no proprio campo caia no canvas por tras.
+  input.addEventListener('mousedown', (ev) => ev.stopPropagation());
 
   return {
     box,
@@ -421,7 +460,8 @@ export function limpar(container) {
 /** Registra um atalho de teclado limpo no SHUTDOWN da cena. */
 export function aoTeclar(scene, tecla, callback) {
   const handler = scene.input.keyboard.on(`keydown-${tecla}`, callback);
-  scene.events.once(PhaserEvents.SHUTDOWN, () =>
+  // Ver `campoTexto`: tem de ser `Phaser.Scenes.Events.SHUTDOWN`.
+  scene.events.once(PhaserCenas.Events.SHUTDOWN, () =>
     scene.input.keyboard.off(`keydown-${tecla}`, handler),
   );
   return handler;

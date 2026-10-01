@@ -46,6 +46,15 @@ import {
   caixaArredondada,
 } from '../ui/comuns.js';
 
+/**
+ * Cenas de painel que abrem por cima do mundo.
+ *
+ * `fecharPaineis()` para todas elas. Precisa ser uma lista fechada (e nao uma
+ * varredura generica em `scene.scenes`) porque `Admin` eo proprio `World`
+ * Matcheriam junto e parar o mundo no meio de um painel.
+ */
+const PAINEIS_SOBREPOSTOS = ['Status', 'Inventario', 'Talentos', 'Fabricacao', 'Reinos', 'Admin'];
+
 const COLUNAS = 34;
 const LINHAS = 26;
 const TAMANHO = TAMANHO_BLOCO;
@@ -89,6 +98,7 @@ export class WorldScene extends Phaser.Scene {
 
     this.criarDerivados();
     this.criarEntrada();
+    this.criarCamera();
     this.criarJogador();
     this.criarMundo();
     this.criarBase();
@@ -151,6 +161,56 @@ export class WorldScene extends Phaser.Scene {
       cima: Phaser.Input.Keyboard.KeyCodes.W,
       baixo: Phaser.Input.Keyboard.KeyCodes.S,
     });
+  }
+
+  /**
+   * Camera arrastavel com o mouse.
+   *
+   * Arrastar o terreno solta o "seguir o jogador", o que deixa olhar areas
+   * ainda nao exploradas; soltar devolve o controle automatico. Arraste que
+   * termina em cima de um botao conta como clique normal.
+   */
+  criarCamera() {
+    const cam = this.cameras.main;
+    this.arrastando = false;
+    this.arrastou = 0;
+    this.arrastarInicio = { x: 0, y: 0, scrollX: 0, scrollY: 0 };
+
+    this.input.on('pointerdown', (ponteiro) => {
+      if (ponteiro.button !== 0) return;
+      // Nao sequestrar cliques que caem em botoos da interface.
+      if (this.input.hitTestPointer(ponteiro).length > 0) return;
+
+      this.arrastando = true;
+      this.arrastou = 0;
+      this.arrastarInicio.x = ponteiro.x;
+      this.arrastarInicio.y = ponteiro.y;
+      this.arrastarInicio.scrollX = cam.scrollX;
+      this.arrastarInicio.scrollY = cam.scrollY;
+      cam.stopFollow();
+    });
+
+    this.input.on('pointermove', (ponteiro) => {
+      if (!this.arrastando || !ponteiro.isDown) return;
+      const dx = ponteiro.x - this.arrastarInicio.x;
+      const dy = ponteiro.y - this.arrastarInicio.y;
+      this.arrastou = Math.max(this.arrastou, Math.abs(dx) + Math.abs(dy));
+      cam.scrollX = this.arrastarInicio.scrollX - dx;
+      cam.scrollY = this.arrastarInicio.scrollY - dy;
+    });
+
+    const soltar = () => {
+      if (!this.arrastando) return;
+      this.arrastando = false;
+      // Volta a seguir o jogador, mas so se o arrasto nao foi lento demais
+      // para ser construed como clique.
+      cam.startFollow(this.jogador, true, 0.12, 0.12);
+      cam.setDeadzone(220, 140);
+    };
+
+    this.input.on('pointerup', soltar);
+    this.input.on('pointerupoutside', soltar);
+    this.input.on('gameout', soltar);
   }
 
   criarJogador() {
@@ -310,12 +370,44 @@ export class WorldScene extends Phaser.Scene {
     return Math.round((y - jogadorY) / TAMANHO + 6);
   }
 
+  /**
+   * Portal Arcanos da base.
+   *
+   * Fica AO LADO do jogador (antes ficava 90px abaixo, o que parecia um item
+   * no chao e nao um portal). E clicavel, e entra na lista de alvos do `E`.
+   */
   criarPortal() {
-    const x = this.jogador.x;
-    const y = this.jogador.y + 90;
+    const x = this.jogador.x + TAMANHO * 3.2;
+    const y = this.jogador.y;
 
-    const brilho = this.add.circle(x, y - 20, 70, 0x7a4fd4, 0.14).setDepth(y - 2);
-    this.portal = this.add.image(x, y, TEXTURAS.PORTAL).setOrigin(0.5, 1).setDepth(y);
+    const brilho = this.add.circle(x, y - 22, 72, 0x7a4fd4, 0.14).setDepth(y - 2);
+    this.portalBrilho = brilho;
+    this.portal = this.add
+      .image(x, y, TEXTURAS.PORTAL)
+      .setOrigin(0.5, 1)
+      .setDepth(y)
+      .setInteractive({ useHandCursor: true });
+
+    // Placa de identificacao acima do portal.
+    const placa = caixaArredondada(this, x, y - 62, 116, 24, {
+      raio: 7,
+      preenchimento: 0x1a1030,
+      alfa: 0.9,
+      borda: 0x9a6fd4,
+      larguraBorda: 1,
+      origem: [0.5, 0.5],
+    });
+    placa.add(
+      this.add
+        .text(0, 0, 'PORTAL [E]', {
+          fontFamily: 'system-ui, sans-serif',
+          fontSize: '11px',
+          color: '#c9a6ff',
+        })
+        .setOrigin(0.5),
+    );
+    placa.setDepth(y + 1);
+    this.portalPlaca = placa;
 
     this.tweens.add({
       targets: this.portal,
@@ -336,7 +428,7 @@ export class WorldScene extends Phaser.Scene {
     });
 
     this.particulasPortal = this.add
-      .particles(x, y - 12, TEXTURAS.PARTICULA, {
+      .particles(x, y - 14, TEXTURAS.PARTICULA, {
         speedY: { min: -70, max: -25 },
         speedX: { min: -14, max: 14 },
         lifespan: 1800,
@@ -348,7 +440,41 @@ export class WorldScene extends Phaser.Scene {
       })
       .setDepth(y - 1);
 
+    // Clique abre o painel de portais; hover destaca o aro.
+    this.portal.on('pointerover', () => {
+      brilho.setFillStyle(0x9a6fd4, 0.3);
+      placa.setScale(1.05);
+    });
+    this.portal.on('pointerout', () => {
+      brilho.setFillStyle(0x7a4fd4, 0.14);
+      placa.setScale(1);
+    });
+    this.portal.on('pointerdown', () => {
+      if (this.painelAberto) return;
+      this.abrirPainelDePortais();
+    });
+
     this.portalAlvo = { x, y };
+  }
+
+  /**
+   * Reposiciona o portal ao LADO do jogador.
+   *
+   * Fica num metodo a parte de proposito: `update()` repositiona todo frame, e
+   * a versao anteriorHardcodava `jogador.y + 90` la dentro, jogando o portal de
+   * volta para baixo do jogador e desfazendo o que `criarPortal` tinha feito.
+   * Qualquer ajuste de offset precisa existir em UM lugar so.
+   */
+  posicionarPortal() {
+    if (!this.portal) return;
+    const x = this.jogador.x + TAMANHO * 3.2;
+    const y = this.jogador.y;
+
+    this.portal.setPosition(x, y).setDepth(y);
+    this.portalAlvo = { x, y };
+    this.particulasPortal?.setPosition(x, y - 14).setDepth(y - 1);
+    this.portalBrilho?.setPosition(x, y - 22).setDepth(y - 2);
+    this.portalPlaca?.setPosition(x, y - 62).setDepth(y + 1);
   }
 
   // ---------- interface ----------
@@ -366,6 +492,12 @@ export class WorldScene extends Phaser.Scene {
     });
 
     const { nivel, xpNoNivel, faltam } = calcularNivel(p.xp ?? 0);
+    // Nome do personagem tambem e atalho para o painel de status.
+    this.txtNome.setInteractive({ useHandCursor: true });
+    this.txtNome.on('pointerover', () => this.txtNome.setAlpha(0.75));
+    this.txtNome.on('pointerout', () => this.txtNome.setAlpha(1));
+    this.txtNome.on('pointerdown', () => this.abrirStatus());
+
     this.txtNivel = uiTexto(this, 18, 36, `Nivel ${nivel}`, { fontSize: '13px' });
     this.txtXp = uiTexto(this, 18, 56, `${xpNoNivel}/${xpParaProximoNivel(nivel)} XP`, { fontSize: '11px' });
 
@@ -387,7 +519,7 @@ export class WorldScene extends Phaser.Scene {
       this,
       this.scale.width - 18,
       10,
-      'WASD/setas: andar | E: atacar/minerar | Q: construir | B: portal | I: inventario | T: talentos | C: fabricar | ESC: sair'
+      'WASD/setas: andar | mouse: arrastar o mapa | E: usar/atacar | Q: construir | B: portal | I: mochila | T: talentos | C: fabricar'
         + (this.isAdmin ? ' | F2: admin' : ''),
       { fontSize: '11px', align: 'right' },
     ).setOrigin(1, 0).setAlpha(0.65);
@@ -427,6 +559,7 @@ export class WorldScene extends Phaser.Scene {
     this.tooltip = null;
 
     const acoes = [
+      { rotulo: 'Personagem', tecla: 'V', textura: TEXTURAS.ICO_PERSONAGEM, fn: () => this.abrirStatus() },
       { rotulo: 'Mochila', tecla: 'I', textura: TEXTURAS.ICO_MOCHILA, fn: () => this.abrirInventario() },
       { rotulo: 'Talentos', tecla: 'T', textura: TEXTURAS.ICO_TALENTOS, fn: () => this.abrirTalentos() },
       { rotulo: 'Fabricação', tecla: 'C', textura: TEXTURAS.ICO_FABRICAR, fn: () => this.abrirFabricacao() },
@@ -550,6 +683,20 @@ export class WorldScene extends Phaser.Scene {
       }
     }
 
+    // Portal (perto e com LAST_RO de folga: e um alvo alto, nao um no do chao)
+    if (this.portal?.active) {
+      const d = Phaser.Math.Distance.Between(
+        this.jogador.x,
+        this.jogador.y - 14,
+        this.portal.x,
+        this.portal.y - 26,
+      );
+      if (d < melhorDist) {
+        melhorDist = d;
+        melhor = { tipo: 'portal' };
+      }
+    }
+
     // Monstros
     for (const m of this.monstros) {
       if (!m.corpo.active) continue;
@@ -574,6 +721,7 @@ export class WorldScene extends Phaser.Scene {
     this.input.keyboard.on('keydown-C', () => this.abrirFabricacao());
     this.input.keyboard.on('keydown-R', () => this.abrirReinos());
     this.input.keyboard.on('keydown-P', () => this.abrirPainelDePortais());
+    this.input.keyboard.on('keydown-V', () => this.abrirStatus());
 
     // ESC so fecha painel. Antes ele DESLOGAVA a conta quando nao havia painel
     // aberto — apertar ESC para fechar algo e perder a sessao era facil, e
@@ -591,16 +739,39 @@ export class WorldScene extends Phaser.Scene {
         return;
       }
       this.fecharPaineis();
-      this.scene.launch('Admin', { uid: this.uid });
+      this.abrirSobreposto('Admin', { uid: this.uid });
     });
   }
 
+  /**
+   * Fecha todos os paineis sobrepostos.
+   *
+   * Antes so destruia o painel interno (`this.painel`, usado pelos Portais) e
+   * deixava as cenas sobrepostas ligadas. Com a cena `Status` aberta, isso
+   * significava que o `<input>` do apelido continuava no DOM e o painel
+   * reaparecia no proximo ESC.
+   */
   fecharPaineis() {
     if (this.painel?.active) {
       this.painel.destroy(true);
       this.painel = null;
     }
+    for (const nome of PAINEIS_SOBREPOSTOS) {
+      if (this.scene.isActive(nome)) this.scene.stop(nome);
+    }
     this.painelAberto = false;
+  }
+
+  /**
+   * Abre um painel sobreposto, garantindo que haja apenas uma instance.
+   *
+   * O `scene.launch` do Phaser e idempotente para cena ja ativa: ele roda o
+   * `init` de novo mas nao recria a tela. Sem parar antes, apertar `V` duas
+   * vezes seguidos deixaria o painel velho no lugar.
+   */
+  abrirSobreposto(nome, dados) {
+    if (this.scene.isActive(nome)) this.scene.stop(nome);
+    this.scene.launch(nome, dados);
   }
 
   /** E: ataca monstro, mineraria recurso ou derruba bloco, conforme o alvo. */
@@ -612,6 +783,7 @@ export class WorldScene extends Phaser.Scene {
     }
     if (alvo.tipo === 'monstro') this.atacarMonstro(alvo.monstro);
     else if (alvo.tipo === 'recurso') this.minerarNo(alvo);
+    else if (alvo.tipo === 'portal') this.abrirPainelDePortais();
     else this.derrubarBloco(alvo);
   }
 
@@ -867,8 +1039,25 @@ export class WorldScene extends Phaser.Scene {
 
   // ---------- paineis (implementados nas cenas seguintes) ----------
 
+  /** V: painel do personagem (equipamento, atributos e apelido). */
+  abrirStatus() {
+    this.abrirSobreposto('Status', {
+      uid: this.uid,
+      estado: this.estado,
+      catalogo: this.catalogo,
+      derivados: this.derivados,
+      // Sem conta nao ha onde persistir o apelido, entao o campo fica somente
+      // como leitura.
+      podeSalvar: Boolean(this.uid),
+      aoSalvar: async (apelido) => {
+        await this.persistir();
+        this.txtNome.setText(apelido);
+      },
+    });
+  }
+
   abrirInventario() {
-    this.scene.launch('Inventario', {
+    this.abrirSobreposto('Inventario', {
       uid: this.uid,
       estado: this.estado,
       catalogo: this.catalogo,
@@ -877,14 +1066,14 @@ export class WorldScene extends Phaser.Scene {
   }
 
   abrirTalentos() {
-    this.scene.launch('Talentos', {
+    this.abrirSobreposto('Talentos', {
       estado: this.estado,
       catalogo: this.catalogo,
     });
   }
 
   abrirFabricacao() {
-    this.scene.launch('Fabricacao', {
+    this.abrirSobreposto('Fabricacao', {
       estado: this.estado,
       catalogo: this.catalogo,
       nivel: this.estado.nivel ?? 1,
@@ -892,7 +1081,7 @@ export class WorldScene extends Phaser.Scene {
   }
 
   abrirReinos() {
-    this.scene.launch('Reinos', {
+    this.abrirSobreposto('Reinos', {
       estado: this.estado,
       catalogo: this.catalogo,
       reinoAtual: this.reinoAtual,
@@ -1030,11 +1219,7 @@ export class WorldScene extends Phaser.Scene {
     }
 
     // Portal segue o jogador.
-    if (this.portal) {
-      this.portal.setPosition(this.jogador.x, this.jogador.y + 90);
-      this.portalAlvo = { x: this.jogador.x, y: this.jogador.y + 90 };
-      this.particulasPortal.setPosition(this.jogador.x, this.jogador.y + 78);
-    }
+    this.posicionarPortal();
 
     // IA dos monstros.
     this.atualizarMonstros(dt);
