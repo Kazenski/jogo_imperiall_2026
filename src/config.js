@@ -1,7 +1,9 @@
 // Le a configuracao do Firebase a partir das variaveis de ambiente do Vite.
 // Ver .env.example para o formato esperado.
 
-const env = import.meta.env;
+// `import.meta.env` so existe sob o Vite. Fora dele (ex.: testes em Node puro)
+// o objeto nao existe, e acessar `.VITE_...` diretamente quebraria o import.
+const env = import.meta.env ?? {};
 
 export const firebaseConfig = {
   apiKey: env.VITE_FIREBASE_API_KEY,
