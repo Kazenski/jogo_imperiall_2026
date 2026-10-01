@@ -20,8 +20,21 @@ service cloud.firestore {
       // Qualquer usuário autenticado pode ler (necessário para checar role no cliente)
       allow read: if request.auth != null;
 
-      // Apenas admins podem escrever em documentos de sistema
-      allow create, update, delete: if isAdmin();
+      // Bootstrap do primeiro admin.
+      //
+      // Sem isto o projeto é impossível de inicializar: `isAdmin()` depende do
+      // documento system/admins existir, e nenhuma regra permitiria criá-lo.
+      //
+      // A condição fecha a porta: só dá para criar o documento se o PRÓPRIO
+      // autor estiver na lista de uids. Ou seja, você só pode se promover a si
+      // mesmo — não dá para transformar outra conta em admin por aqui. Depois
+      // que o documento existe, qualquer alteração exige já ser admin.
+      allow create: if request.auth != null
+                    && request.resource.data.uids is list
+                    && request.auth.uid in request.resource.data.uids;
+
+      // Após criado, só admins mexem.
+      allow update, delete: if isAdmin();
     }
 
     // ---------- Usuários ----------
