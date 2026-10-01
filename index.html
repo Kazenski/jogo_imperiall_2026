@@ -90,6 +90,36 @@
     </style>
   </head>
   <body>
+    <!--
+      Diagnostico de deploy.
+
+      Este arquivo e a ENTRADA DE DESENVOLVIMENTO (ele aponta para /src/main.js).
+      O site publicado deve servir o build de `dist/`, onde o caminho vira
+      /jogo_imperiall_2026/assets/....
+
+      Se o GitHub Pages estiver configurado com Source = "main branch / root",
+      ele serve ESTE arquivo e o navegador pede /src/main.js, que da 404 e a tela
+      fica preta. Aqui detectamos esse caso e dizemos o que fazer, em vez de
+      deixar o jogador olhando para uma tela vazia.
+    -->
+    <script>
+      (function () {
+        var base = '/jogo_imperiall_2026/';
+        var emGithubPages = /(^|\.)github\.io$/.test(location.hostname);
+        if (!emGithubPages || location.pathname.indexOf(base) === 0) return;
+
+        var boot = document.getElementById('boot');
+        if (!boot) return;
+        boot.innerHTML =
+          '<h1>Nao foi possivel carregar o jogo</h1>' +
+          '<p>O GitHub Pages esta servindo a raiz do repositorio em vez do build.</p>' +
+          '<p>Rapos &gt; Settings &gt; Pages &gt; Build and deployment &gt; Source = <strong>GitHub Actions</strong></p>' +
+          '<p>Depois faca um novo push para o workflow publicar novamente.</p>';
+        var barra = boot.querySelector('.barra');
+        if (barra) barra.style.display = 'none';
+      })();
+    </script>
+
     <div id="game"></div>
 
     <div id="boot">
