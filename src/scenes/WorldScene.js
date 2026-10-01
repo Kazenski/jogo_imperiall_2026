@@ -64,6 +64,19 @@ export class WorldScene extends Phaser.Scene {
     cam.setBounds(0, 0, LARGURA_TILEMAP, ALTURA_TILEMAP);
     cam.setRoundPixels(true);
 
+    // `create` e async (precisa carregar o catalogo) e o Phaser comeca a chamar
+    // `update` no proximo frame, ou seja, ANTES deste metodo terminar. Sem esta
+    // trava, o primeiro update roda com metade do cenario construido e estoura
+    // em `this.chao.setSize`.
+    this.pronto = false;
+    this.carregando = this.add
+      .text(this.scale.width / 2, this.scale.height / 2, 'Forjando o reino...', {
+        fontFamily: 'Georgia, serif',
+        fontSize: '18px',
+        color: OURO,
+      })
+      .setOrigin(0.5);
+
     this.catalogo = await carregarCatalogo();
     this.reinoAtual = reinoInicial(this.catalogo, this.estado.nivel ?? 1) ?? this.catalogo.worldTemplates?.[0];
 
@@ -83,6 +96,9 @@ export class WorldScene extends Phaser.Scene {
     this.atalhos();
     this.syncBaseVisivel();
     this.atualizarDerivados();
+
+    this.carregando.destroy();
+    this.pronto = true;
   }
 
   // ---------- derivados e estado ----------
@@ -115,12 +131,18 @@ export class WorldScene extends Phaser.Scene {
   // ---------- construcao de cenario ----------
 
   criarEntrada() {
+    // Setas do teclado. Complementam o WASD no movimento.
     this.teclado = this.input.keyboard.createCursorKeys();
+
+    // WASD com nomes semanticos. O `update` le exatamente estes nomes, entao
+    // as duas listas precisam concordar — antes elas divergiam (w/a/s/d aqui,
+    // esquerda/direita/cima/baixo no update) e o jogo estourava no primeiro
+    // frame de movimento.
     this.teclas = this.input.keyboard.addKeys({
-      w: Phaser.Input.Keyboard.KeyCodes.W,
-      a: Phaser.Input.Keyboard.KeyCodes.A,
-      s: Phaser.Input.Keyboard.KeyCodes.S,
-      d: Phaser.Input.Keyboard.KeyCodes.D,
+      esquerda: Phaser.Input.Keyboard.KeyCodes.A,
+      direita: Phaser.Input.Keyboard.KeyCodes.D,
+      cima: Phaser.Input.Keyboard.KeyCodes.W,
+      baixo: Phaser.Input.Keyboard.KeyCodes.S,
     });
   }
 
@@ -698,7 +720,7 @@ export class WorldScene extends Phaser.Scene {
     this.add.particles(x, y, TEXTURAS.PARTICULA, {
       speed: { min: 40, max: 120 },
       lifespan: 320,
-      quantity,
+      quantity: quantidade,
       tint: cor,
       scale: { start: 0.8, end: 0 },
       emitting: false,
@@ -905,6 +927,9 @@ export class WorldScene extends Phaser.Scene {
   // ---------- loop ----------
 
   update(time, delta) {
+    // `create` ainda nao terminou (carregando o catalogo).
+    if (!this.pronto) return;
+
     const dt = delta / 1000;
     const cam = this.cameras.main;
 
