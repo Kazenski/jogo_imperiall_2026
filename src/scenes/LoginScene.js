@@ -9,6 +9,7 @@ import {
 import { carregarProgresso, salvarProgresso } from '../core/progresso.js';
 import { OURO, PERGAMINHO } from '../constants.js';
 import { garantirPerfil, ehAdmin } from '../core/usuarios.js';
+import { botao } from '../ui/comuns.js';
 
 export class LoginScene extends Phaser.Scene {
   constructor() {
@@ -62,18 +63,29 @@ export class LoginScene extends Phaser.Scene {
 
     // --- botoes ---
     this.botaoEntrar = firebaseDisponivel()
-      ? this.criarBotao(centroX, height * 0.55, 'Entrar com Google', this.tentarGoogle.bind(this))
+      ? botao(this, centroX, height * 0.55, 'Entrar com Google', this.tentarGoogle.bind(this), {
+          largura: 280,
+          altura: 52,
+          raio: 12,
+          tamanho: '16px',
+        })
       : null;
 
-    this.botaoLocal = this.criarBotao(
+    this.botaoLocal = botao(
+      this,
       centroX,
       firebaseDisponivel() ? height * 0.66 : height * 0.58,
       'Jogar sem conta',
-      () => this.entrar({ uid: null, nome: 'Viajante', email: null }),
+      () => this.entrar({ uid: null, displayName: 'Viajante', email: null }),
       {
-        fill: 0x2a2018,
-        hover: 0x3a2c20,
-        textColor: PERGAMINHO,
+        largura: 280,
+        altura: 52,
+        raio: 12,
+        cor: 0x2a2018,
+        corHover: 0x3a2c20,
+        corBorda: 0x8a6a2f,
+        corTexto: PERGAMINHO,
+        tamanho: '16px',
       },
     );
 
@@ -112,41 +124,8 @@ export class LoginScene extends Phaser.Scene {
     this.scene.restart();
   }
 
-  criarBotao(x, y, texto, onClick, estilo = {}) {
-    const {
-      fill = 0xd4af6a,
-      hover = 0xe6c47c,
-      textColor = '#14100c',
-    } = estilo;
-
-    const largura = 260;
-    const altura = 50;
-
-    const caixa = this.add
-      .rectangle(x, y, largura, altura, fill)
-      .setOrigin(0.5)
-      .setStrokeStyle(2, 0x8a6a2f)
-      .setInteractive({ useHandCursor: true });
-
-    const label = this.add
-      .text(x, y, texto, {
-        fontFamily: 'system-ui, sans-serif',
-        fontSize: '16px',
-        fontStyle: '600',
-        color: textColor,
-      })
-      .setOrigin(0.5);
-
-    caixa.on('pointerover', () => caixa.setFillStyle(hover));
-    caixa.on('pointerout', () => caixa.setFillStyle(fill));
-    caixa.on('pointerdown', onClick);
-
-    caixa.setData('rotulo', label);
-    return caixa;
-  }
-
   async tentarGoogle() {
-    this.botaoEntrar?.setFillStyle(0x8a6a2f);
+    this.botaoEntrar?.definirVisual(0x8a6a2f);
     this.status.setText('Abrindo o login do Google...');
 
     try {
@@ -154,7 +133,7 @@ export class LoginScene extends Phaser.Scene {
       await this.entrar(user);
     } catch (erro) {
       console.error(erro);
-      this.botaoEntrar?.setFillStyle(0xd4af6a);
+      this.botaoEntrar?.definirVisual(0xd4af6a);
       this.status.setText(traduzirErro(erro));
     }
   }
@@ -166,37 +145,47 @@ export class LoginScene extends Phaser.Scene {
 
     this.status.setText('Carregando seu reino...');
 
-    let progresso = await carregarProgresso(uid);
+    try {
+      let progresso = await carregarProgresso(uid);
 
-    // Primeiro login: usa o nome do Google no primeiro salvamento.
-    if (uid && (!progresso.nome || progresso.nome === 'Viajante')) {
-      progresso = await salvarProgresso(uid, { nome });
-    }
-
-    if (user && !progresso.criadoEm) {
-      progresso = await salvarProgresso(uid, {});
-    }
-
-    // Garante perfil com role + verifica admin
-    let perfil = null;
-    let isAdminUser = false;
-    if (uid) {
-      try {
-        perfil = await garantirPerfil(user);
-        isAdminUser = await ehAdmin(uid);
-      } catch (e) {
-        console.warn('[Login] nao foi possivel garantir perfil:', e);
+      // Primeiro login: usa o nome do Google no primeiro salvamento.
+      if (uid && (!progresso.nome || progresso.nome === 'Viajante')) {
+        progresso = await salvarProgresso(uid, { nome });
       }
-    }
 
-    this.scene.start('World', {
-      uid,
-      nome,
-      email: user?.email ?? null,
-      podeSair: Boolean(uid),
-      estado: progresso,
-      perfil,
-      isAdmin: isAdminUser,
-    });
+      if (user && !progresso.criadoEm) {
+        progresso = await salvarProgresso(uid, {});
+      }
+
+      // Garante perfil com role + verifica admin
+      let perfil = null;
+      let isAdminUser = false;
+      if (uid) {
+        try {
+          perfil = await garantirPerfil(user);
+          isAdminUser = await ehAdmin(uid);
+        } catch (e) {
+          console.warn('[Login] nao foi possivel garantir perfil:', e);
+        }
+      }
+
+      this.scene.start('World', {
+        uid,
+        nome,
+        email: user?.email ?? null,
+        podeSair: Boolean(uid),
+        estado: progresso,
+        perfil,
+        isAdmin: isAdminUser,
+      });
+    } catch (erro) {
+      // Sem isto, uma falha aqui deixa o jogador preso na tela de login sem
+      // nenhuma explicacao — parecia "o jogo me deslogou".
+      console.error('[Login] falha ao entrar:', erro);
+      this.status.setText(
+        `Nao foi possivel carregar seu reino: ${erro?.message ?? erro}\nTente de novo.`,
+      );
+      if (this.botaoEntrar) this.botaoEntrar.definirVisual(0xd4af6a);
+    }
   }
 }

@@ -22,6 +22,16 @@ export const TEXTURAS = {
   BARRA_VIDA: 'barra_vida',
   BARRA_PODER: 'barra_poder',
   SLICE: 'slice',
+
+  // Icones do menu principal. 32x32, desenhados com primitives do Graphics.
+  ICO_MOCHILA: 'ico_mochila',
+  ICO_TALENTOS: 'ico_talentos',
+  ICO_FABRICAR: 'ico_fabricar',
+  ICO_REINOS: 'ico_reinos',
+  ICO_PORTAIS: 'ico_portais',
+  ICO_PERSONAGEM: 'ico_personagem',
+  ICO_MAPA: 'ico_mapa',
+  ICO_SAIR: 'ico_sair',
 };
 
 export class BootScene extends Phaser.Scene {
@@ -46,6 +56,7 @@ export class BootScene extends Phaser.Scene {
     this.criarTexturaPainel();
     this.criarTexturaBarras();
     this.criarTexturaSlice();
+    this.criarTexturaIcones();
 
     this.scene.start('Login');
   }
@@ -286,6 +297,141 @@ export class BootScene extends Phaser.Scene {
     g.fillStyle(0xffffff, 1);
     g.fillCircle(8, 8, 8);
     g.generateTexture(TEXTURAS.SLICE, 16, 16);
+    g.destroy();
+  }
+
+  /**
+   * Icones do menu principal, 32x32.
+   *
+   * Desenhados com primitives do Graphics porque o jogo nao carrega arquivos de
+   * imagem. Troque por PNG depois — e so manter os mesmos nomes de textura.
+   */
+  criarTexturaIcones() {
+    const dourado = 0xd4af6a;
+    const claro = 0xf2e6d0;
+    const escuro = 0x241c14;
+
+    // --- Mochila ---
+    this.desenharIcone(TEXTURAS.ICO_MOCHILA, (g) => {
+      g.fillStyle(dourado, 1);
+      g.fillRoundedRect(7, 11, 18, 16, 3);
+      g.fillStyle(escuro, 1);
+      g.fillRoundedRect(7, 11, 18, 5, 3);
+      // alca
+      g.lineStyle(2, claro, 1);
+      g.beginPath();
+      g.moveTo(12, 11);
+      g.lineTo(12, 7);
+      g.lineTo(20, 7);
+      g.lineTo(20, 11);
+      g.strokePath();
+      // fecho
+      g.fillStyle(claro, 1);
+      g.fillRect(14, 18, 4, 3);
+    });
+
+    // --- Arvore de talentos ---
+    this.desenharIcone(TEXTURAS.ICO_TALENTOS, (g) => {
+      g.lineStyle(2, claro, 1);
+      g.beginPath();
+      g.moveTo(16, 27);
+      g.lineTo(16, 14);
+      g.strokePath();
+      g.fillStyle(dourado, 1);
+      g.fillCircle(16, 10, 5); // no de cima
+      g.fillCircle(8, 17, 4); // no da esquerda
+      g.fillCircle(24, 17, 4); // no da direita
+    });
+
+    // --- Fabricacao ---
+    this.desenharIcone(TEXTURAS.ICO_FABRICAR, (g) => {
+      // bigorna
+      g.fillStyle(dourado, 1);
+      g.fillRoundedRect(6, 16, 20, 5, 1);
+      g.fillRect(12, 21, 8, 5);
+      g.fillRoundedRect(9, 26, 14, 3, 1);
+      // martelo
+      g.lineStyle(2, claro, 1);
+      g.beginPath();
+      g.moveTo(20, 15);
+      g.lineTo(25, 8);
+      g.strokePath();
+      g.fillStyle(claro, 1);
+      g.fillRoundedRect(21, 5, 8, 5, 1);
+    });
+
+    // --- Reinos etereos (globo) ---
+    this.desenharIcone(TEXTURAS.ICO_REINOS, (g) => {
+      g.lineStyle(2, dourado, 1);
+      g.strokeCircle(16, 16, 11);
+      g.beginPath();
+      g.moveTo(5, 16);
+      g.lineTo(27, 16);
+      g.moveTo(16, 5);
+      g.lineTo(16, 27);
+      g.strokePath();
+      g.lineStyle(1, claro, 0.75);
+      g.beginPath();
+      g.arc(16, 16, 11, Math.PI * 0.15, Math.PI * 0.85);
+      g.strokePath();
+      g.beginPath();
+      g.arc(16, 16, 11, Math.PI * 1.15, Math.PI * 1.85);
+      g.strokePath();
+    });
+
+    // --- Portais ---
+    this.desenharIcone(TEXTURAS.ICO_PORTAIS, (g) => {
+      g.lineStyle(2, dourado, 1);
+      g.strokeEllipse(16, 16, 16, 24);
+      g.lineStyle(1, claro, 0.6);
+      g.strokeEllipse(16, 16, 8, 24);
+      g.fillStyle(claro, 0.9);
+      g.fillCircle(16, 16, 3);
+    });
+
+    // --- Personagem / status ---
+    this.desenharIcone(TEXTURAS.ICO_PERSONAGEM, (g) => {
+      g.fillStyle(dourado, 1);
+      g.fillCircle(16, 11, 6); // cabeca
+      g.fillRoundedRect(9, 18, 14, 11, 4); // tronco
+      g.fillStyle(escuro, 1);
+      g.fillCircle(16, 11, 0);
+    });
+
+    // --- Mapa ---
+    this.desenharIcone(TEXTURAS.ICO_MAPA, (g) => {
+      g.fillStyle(dourado, 1);
+      g.fillRoundedRect(5, 8, 22, 17, 3);
+      g.lineStyle(2, escuro, 1);
+      g.beginPath();
+      g.moveTo(12, 8);
+      g.lineTo(12, 25);
+      g.moveTo(20, 8);
+      g.lineTo(20, 25);
+      g.strokePath();
+    });
+
+    // --- Sair ---
+    this.desenharIcone(TEXTURAS.ICO_SAIR, (g) => {
+      g.lineStyle(2, 0xd05a5a, 1);
+      g.strokeCircle(13, 16, 8);
+      g.beginPath();
+      g.moveTo(21, 16);
+      g.lineTo(28, 16);
+      g.strokePath();
+      g.beginPath();
+      g.moveTo(24, 12);
+      g.lineTo(28, 16);
+      g.lineTo(24, 20);
+      g.strokePath();
+    });
+  }
+
+  /** Gera uma textura 32x32 a partir de um callback de desenho. */
+  desenharIcone(chave, desenhar) {
+    const g = this.make.graphics({ add: false });
+    desenhar(g);
+    g.generateTexture(chave, 32, 32);
     g.destroy();
   }
 }

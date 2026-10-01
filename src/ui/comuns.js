@@ -27,29 +27,88 @@ export function titulo(scene, x, y, conteudo, tamanho = '18px') {
 }
 
 /**
- * Painel de fundo com moldura, ancorado pelo canto superior esquerdo.
+ * Desenha uma caixa de cantos arredondados dentro de um container.
  *
- * Feito com retangulos (e nao nine-slice) de proposito: `scene.add.nineSlice`
- * so existe se o plugin NineSlice do Phaser for registrado, e isso depende de
- * caminhos internos da biblioteca. Retangulo funciona sempre.
+ * O ponto (x, y) do container e a ANCORA da caixa, e `origem` diz qual canto ela
+ * representa — assim `botao(..., { origem: [1, 1] })` ancora pelo canto inferior
+ * direito, igual ao `setOrigin` de um Rectangle.
+ *
+ * Usa `Graphics.fillRoundedRect` em vez de Rectangle porque o Phaser so tem
+ * cantos arredondados em Graphics. (NineSlice exigiria registrar um plugin do
+ * Phaser, que depende de caminho interno da biblioteca.)
  */
-export function painel(scene, x, y, largura, altura, preenchimento = 0x14100c, alfa = 0.96) {
+export function caixaArredondada(scene, x, y, largura, altura, opcoes = {}) {
+  const {
+    raio = 8,
+    preenchimento = 0x14100c,
+    alfa = 1,
+    borda = 0x8a6a2f,
+    larguraBorda = 2,
+    bordaInterna = null,
+    alfaBordaInterna = 0.35,
+    origem = [0, 0],
+  } = opcoes;
+
+  // Desenha sempre de (0,0) a (largura, altura) e desloca conforme a origem.
+  const dx = origem[0] === 1 ? -largura : 0;
+  const dy = origem[1] === 1 ? -altura : 0;
+
+  const g = scene.add.graphics();
+  if (preenchimento !== null) {
+    g.fillStyle(preenchimento, alfa);
+    g.fillRoundedRect(dx, dy, largura, altura, raio);
+  }
+  if (larguraBorda > 0 && borda !== null) {
+    g.lineStyle(larguraBorda, borda, 1);
+    g.strokeRoundedRect(dx, dy, largura, altura, raio);
+  }
+  if (bordaInterna !== null) {
+    g.lineStyle(1, bordaInterna, alfaBordaInterna);
+    const m = 5;
+    g.strokeRoundedRect(
+      dx + m,
+      dy + m,
+      Math.max(0, largura - m * 2),
+      Math.max(0, altura - m * 2),
+      Math.max(0, raio - 3),
+    );
+  }
+
   const container = scene.add.container(x, y);
-
-  container.add(
-    scene.add.rectangle(largura / 2, altura / 2, largura, altura, preenchimento, alfa),
-  );
-  // moldura dupla
-  container.add(
-    scene.add.rectangle(largura / 2, altura / 2, largura, altura).setStrokeStyle(2, 0x8a6a2f),
-  );
-  container.add(
-    scene.add
-      .rectangle(largura / 2, altura / 2, largura - 10, altura - 10)
-      .setStrokeStyle(1, 0xd4af6a, 0.35),
-  );
-
+  container.add(g);
+  container.caixa = g;
+  container.largura = largura;
+  container.altura = altura;
+  container.deslocamento = { dx, dy };
   return container;
+}
+
+/**
+ * Adiciona um retangulo invisivel usado apenas como area de clique.
+ * O container de um painel precisa disso para responder ao mouse.
+ */
+export function areaDeClique(scene, x, y, largura, altura, origem = [0, 0]) {
+  const dx = origem[0] === 1 ? -largura : 0;
+  const dy = origem[1] === 1 ? -altura : 0;
+  return scene.add
+    .rectangle(x, y, largura, altura, 0xffffff, 0)
+    .setOrigin(0, 0)
+    .setInteractive({ useHandCursor: true })
+    .setData('offset', { dx, dy });
+}
+
+/** Painel de fundo com moldura, ancorado pelo canto superior esquerdo. */
+export function painel(scene, x, y, largura, altura, preenchimento = 0x14100c, alfa = 0.96) {
+  return caixaArredondada(scene, x, y, largura, altura, {
+    raio: 12,
+    preenchimento,
+    alfa,
+    borda: 0x8a6a2f,
+    larguraBorda: 2,
+    bordaInterna: OURO,
+    alfaBordaInterna: 0.22,
+    origem: [0, 0],
+  });
 }
 
 /**
@@ -64,76 +123,150 @@ export function addTodos(scene, ...objetos) {
   return lista;
 }
 
-/** Botao com texto. Retorna { caixa, label, destroy }. */
+/**
+ * Botao arredondado. Retorna { caixa, label, container, definirPosicao, ... }.
+ *
+ * `caixa` e o container — quem precisar mexer no visual (fill, hover) usa
+ * `container.caixa` (Graphics) e `definirVisual()`.
+ */
 export function botao(scene, x, y, rotulo, onClick, opcoes = {}) {
   const {
     largura = 160,
     altura = 34,
+    raio = 8,
     cor = 0xd4af6a,
     corHover = 0xe6c47c,
     corTexto = '#14100c',
     tamanho = '13px',
     origem = [0.5, 0.5],
+    alfa = 1,
+    icone = null,
+    corBorda = 0x8a6a2f,
+    alinhamento = 'left',
+    padding = 10,
   } = opcoes;
 
-  const caixa = scene.add
-    .rectangle(x, y, largura, altura, cor, opcoes.alfa ?? 1)
-    .setOrigin(origem[0], origem[1])
-    .setStrokeStyle(1, 0x8a6a2f)
+  const box = caixaArredondada(scene, x, y, largura, altura, {
+    raio,
+    preenchimento: cor,
+    alfa,
+    borda: corBorda,
+    larguraBorda: 1,
+    origem,
+  });
+
+  const dx = box.deslocamento.dx;
+  const dy = box.deslocamento.dy;
+  box.caixa.setAlpha(alfa);
+
+  // Zona de clique: um retangulo invisivel dentro do container.
+  const clique = scene.add
+    .rectangle(0, 0, largura, altura, 0xffffff, 0)
+    .setOrigin(0, 0)
+    .setPosition(dx, dy)
     .setInteractive({ useHandCursor: true });
+  box.add(clique);
+
+  // Icone opcional, alinhado a esquerda com o texto ao lado.
+  let imgIcone = null;
+  let textoX = largura / 2;
+  if (icone) {
+    imgIcone = scene.add
+      .image(dx + padding + 11, dy + altura / 2, icone.texture)
+      .setDisplaySize(icone.tamanho ?? 22, icone.tamanho ?? 22)
+      .setOrigin(0.5);
+    imgIcone.setAlpha(icone.alfa ?? 0.95);
+    box.add(imgIcone);
+    textoX = padding + 22 + 8 + (largura - padding * 2 - 30) / 2;
+  } else if (alinhamento === 'left') {
+    textoX = padding + (largura - padding * 2) / 2;
+  } else {
+    textoX = largura / 2;
+  }
 
   const label = scene.add
-    .text(x, y, rotulo, {
+    .text(dx + textoX, dy + altura / 2, rotulo, {
       ...FONTE_UI,
       fontSize: tamanho,
       color: corTexto,
       align: 'center',
     })
     .setOrigin(0.5);
+  box.add(label);
 
-  caixa.on('pointerover', () => caixa.setFillStyle(corHover));
-  caixa.on('pointerout', () => caixa.setFillStyle(cor));
-  caixa.on('pointerdown', onClick);
+  const aplicarCor = (c) => {
+    box.caixa.clear();
+    box.caixa.fillStyle(c, alfa);
+    box.caixa.fillRoundedRect(dx, dy, largura, altura, raio);
+    box.caixa.lineStyle(1, corBorda, 1);
+    box.caixa.strokeRoundedRect(dx, dy, largura, altura, raio);
+  };
+  aplicarCor(cor);
+
+  clique.on('pointerover', () => aplicarCor(corHover));
+  clique.on('pointerout', () => aplicarCor(cor));
+  clique.on('pointerdown', onClick);
 
   return {
-    caixa,
+    caixa: box,
+    container: box,
+    clique,
     label,
+    icone: imgIcone,
+    // Aliases para quem esperava um Rectangle (.width/.height do GameObject).
+    width: largura,
+    height: altura,
+    definirVisual: aplicarCor,
     setTexto: (t) => label.setText(t),
-    definirPosicao: (nx, ny) => {
-      caixa.setPosition(nx, ny);
-      label.setPosition(nx, ny);
-    },
-    destruir: () => {
-      caixa.destroy();
-      label.destroy();
-    },
+    definirPosicao: (nx, ny) => box.setPosition(nx, ny),
+    destruir: () => box.destroy(true),
   };
 }
 
 /** Linha clicavel de lista (nome + detalhe). */
 export function linhaLista(scene, x, y, largura, nome, detalhe, onClick) {
-  const caixa = scene.add
-    .rectangle(x, y, largura, 38, 0x1d1710, 1)
+  const altura = 40;
+  const box = caixaArredondada(scene, x, y, largura, altura, {
+    raio: 8,
+    preenchimento: 0x1d1710,
+    borda: 0x2e241a,
+    larguraBorda: 1,
+    origem: [0, 0],
+  });
+
+  const clique = scene.add
+    .rectangle(0, 0, largura, altura, 0xffffff, 0)
     .setOrigin(0, 0)
-    .setStrokeStyle(1, 0x2e241a)
     .setInteractive({ useHandCursor: true });
+  box.add(clique);
 
   const t1 = scene.add
-    .text(x + 10, y + 5, nome, { ...FONTE_UI, fontSize: '13px', color: OURO })
+    .text(x + 12, y + 7, nome, { ...FONTE_UI, fontSize: '13px', color: OURO })
     .setOrigin(0, 0);
-
   const t2 = scene.add
-    .text(x + 10, y + 21, detalhe, { ...FONTE_UI, fontSize: '10px', color: PERGAMINHO })
+    .text(x + 12, y + 23, detalhe, { ...FONTE_UI, fontSize: '10px', color: PERGAMINHO })
     .setOrigin(0, 0)
     .setAlpha(0.75);
 
   if (onClick) {
-    caixa.on('pointerover', () => caixa.setStrokeStyle(1, 0xd4af6a));
-    caixa.on('pointerout', () => caixa.setStrokeStyle(1, 0x2e241a));
-    caixa.on('pointerdown', onClick);
+    clique.on('pointerover', () => {
+      box.caixa.clear();
+      box.caixa.fillStyle(0x2a2018, 1);
+      box.caixa.fillRoundedRect(0, 0, largura, altura, 8);
+      box.caixa.lineStyle(1, OURO, 1);
+      box.caixa.strokeRoundedRect(0, 0, largura, altura, 8);
+    });
+    clique.on('pointerout', () => {
+      box.caixa.clear();
+      box.caixa.fillStyle(0x1d1710, 1);
+      box.caixa.fillRoundedRect(0, 0, largura, altura, 8);
+      box.caixa.lineStyle(1, 0x2e241a, 1);
+      box.caixa.strokeRoundedRect(0, 0, largura, altura, 8);
+    });
+    clique.on('pointerdown', onClick);
   }
 
-  return { caixa, t1, t2 };
+  return { caixa: box, clique, t1, t2 };
 }
 
 /** Chip pequeno (usado para tags de uso/raridade). */
@@ -143,31 +276,139 @@ export function chip(scene, x, y, rotulo, cor = 0x241c14, corTexto = PERGAMINHO)
       ...FONTE_UI,
       fontSize: '10px',
       color: corTexto,
-      backgroundColor: cor,
-      padding: { x: 5, y: 2 },
     })
     .setOrigin(0, 0);
-  return t;
+
+  const w = t.width + 10;
+  const h = t.height + 5;
+  const fundo = scene.add.graphics();
+  fundo.fillStyle(cor, 1);
+  fundo.fillRoundedRect(0, 0, w, h, (h / 2));
+  fundo.fillStyle(cor, 1);
+  t.setPosition(x + 5, y + 2);
+
+  const container = scene.add.container(x, y);
+  container.add(fundo);
+  container.add(t);
+  container.largura = w;
+  container.altura = h;
+  container.width = w;
+  container.height = h;
+  return container;
 }
 
-/** Barra de status (usada por jogador e monstros). */
+/**
+ * Barra de status (usada por jogador e monstros), com cantos arredondados.
+ *
+ * O `Graphics` so e redesenhado quando o valor MUDA — 22 monstros redesenhando
+ * a cada frame custa caro e nao traz nada.
+ */
 export function barra(scene, x, y, largura, altura, cor, pct = 1) {
-  const fundo = scene.add
-    .rectangle(x, y, largura, altura, 0x1a1410, 0.85)
-    .setOrigin(0, 0);
-  const frente = scene.add
-    .rectangle(x + 1, y + 1, Math.max(0, (largura - 2) * PhaserMath.Clamp(pct, 0, 1)), altura - 2, cor)
-    .setOrigin(0, 0);
+  const raio = Math.max(1, Math.min(altura / 2, largura / 2));
+  const frente = scene.add.graphics();
+  const interno = Math.max(0, (altura - 4) / 2);
+  let ultimoPct = -1;
+
+  const desenhar = (p) => {
+    frente.clear();
+    frente.fillStyle(0x1a1410, 0.85);
+    frente.fillRoundedRect(0, 0, largura, altura, raio);
+    frente.lineStyle(1, 0x000000, 0.35);
+    frente.strokeRoundedRect(0, 0, largura, altura, raio);
+    const w = Math.max(0, (largura - 4) * PhaserMath.Clamp(p, 0, 1));
+    if (w > 0.5) {
+      frente.fillStyle(cor, 1);
+      frente.fillRoundedRect(2, 2, w, altura - 4, interno);
+    }
+  };
+  desenhar(pct);
+
+  const container = scene.add.container(x, y);
+  container.add(frente);
+
   return {
-    fundo,
+    container,
     frente,
+    fundo: frente,
     atualizar(p) {
-      frente.width = Math.max(0, (largura - 2) * PhaserMath.Clamp(p, 0, 1));
+      const v = PhaserMath.Clamp(p, 0, 1);
+      if (Math.abs(v - ultimoPct) < 0.002) return;
+      ultimoPct = v;
+      desenhar(v);
     },
     destruir() {
-      fundo.destroy();
-      frente.destroy();
+      container.destroy(true);
     },
+  };
+}
+
+/**
+ * Campo de texto com cantos arredondados.
+ *
+ * O Phaser nao tem input de texto proprio, entao usamos um <input> do DOM
+ * sobreposto ao canvas. Devolve uma funcao `focar()` e o elemento DOM.
+ */
+export function campoTexto(scene, x, y, largura, altura, valor = '', opcoes = {}) {
+  const {
+    placeholder = '',
+    maxLength = 24,
+    aoConfirmar = null,
+  } = opcoes;
+
+  const box = caixaArredondada(scene, x, y, largura, altura, {
+    raio: 8,
+    preenchimento: 0x1a1410,
+    borda: 0x8a6a2f,
+    larguraBorda: 1,
+    origem: [0, 0],
+  });
+
+  const input = document.createElement('input');
+  input.type = 'text';
+  input.value = valor;
+  input.maxLength = maxLength;
+  input.placeholder = placeholder;
+  input.autocomplete = 'off';
+  input.spellcheck = false;
+
+  const canvas = scene.game.canvas;
+  const escala = PhaserMath.Clamp(window.devicePixelRatio || 1, 1, 2);
+  Object.assign(input.style, {
+    position: 'absolute',
+    left: `${x * escala + 10}px`,
+    top: `${y * escala + (altura - 26 * escala) / 2}px`,
+    width: `${(largura - 20) * escala}px`,
+    height: `${26 * escala}px`,
+    background: 'transparent',
+    border: 'none',
+    outline: 'none',
+    color: PERGAMINHO,
+    font: `${13 * escala}px system-ui, sans-serif`,
+    textAlign: 'center',
+    zIndex: 20,
+  });
+
+  canvas.parentElement.appendChild(input);
+
+  const limpar = () => input.remove();
+  scene.events.once(PhaserEvents.SHUTDOWN, limpar);
+
+  input.addEventListener('keydown', (ev) => {
+    ev.stopPropagation();
+    if (ev.key === 'Enter') {
+      input.blur();
+      aoConfirmar?.(input.value.trim());
+    }
+    if (ev.key === 'Escape') input.blur();
+  });
+  input.addEventListener('blur', () => aoConfirmar?.(input.value.trim()));
+
+  return {
+    box,
+    input,
+    valor: () => input.value.trim(),
+    focar: () => input.focus(),
+    destruir: limpar,
   };
 }
 

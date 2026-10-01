@@ -37,7 +37,14 @@ import {
   TAMANHO_BLOCO,
 } from '../core/mundo.js';
 import { VELOCIDADE, OURO, PERGAMINHO } from '../constants.js';
-import { texto as uiTexto, titulo as uiTitulo, painel, botao, barra } from '../ui/comuns.js';
+import {
+  texto as uiTexto,
+  titulo as uiTitulo,
+  painel,
+  botao,
+  barra,
+  caixaArredondada,
+} from '../ui/comuns.js';
 
 const COLUNAS = 34;
 const LINHAS = 26;
@@ -249,9 +256,8 @@ export class WorldScene extends Phaser.Scene {
 
     // Barra de vida flutuante. Fica em coordenadas de MUNDO (mesmo scroll do
     // corpo), senao o scrollFactor 0 a prenderia na tela.
-    monstro.barraVida = barra(this, x - 16, y - 34, 32, 4, 0xd05a5a, 1);
-    monstro.barraVida.fundo.setDepth(y + 1);
-    monstro.barraVida.frente.setDepth(y + 1);
+    monstro.barraVida = barra(this, x - 16, y - 34, 32, 5, 0xd05a5a, 1);
+    monstro.barraVida.container.setDepth(y + 1);
 
     corpo.setDepth(y);
     this.monstros.push(monstro);
@@ -409,35 +415,90 @@ export class WorldScene extends Phaser.Scene {
   }
 
   /** Botoes flutuantes no canto inferior direito (atalhos de toque/atalho). */
+  /**
+   * Menu principal: barra vertical de icones na direita.
+   *
+   * Cada botao e icone + rotulo, e o rotulo so aparece ao passar o mouse
+   * (tooltip). Antes These buttons usavam apenas a "caixa" e descartavam o
+   * texto, entao apareciam sem nenhuma legenda.
+   */
   criarBarraDeAcoes() {
     this.barraAcoes = this.add.container(0, 0).setDepth(1000).setScrollFactor(0);
+    this.tooltip = null;
+
     const acoes = [
-      { rotulo: 'Mochila [I]', fn: () => this.abrirInventario() },
-      { rotulo: 'Talentos [T]', fn: () => this.abrirTalentos() },
-      { rotulo: 'Fabricar [C]', fn: () => this.abrirFabricacao() },
-      { rotulo: 'Reinos [R]', fn: () => this.abrirReinos() },
-      { rotulo: 'Portais [P]', fn: () => this.abrirPainelDePortais() },
+      { rotulo: 'Mochila', tecla: 'I', textura: TEXTURAS.ICO_MOCHILA, fn: () => this.abrirInventario() },
+      { rotulo: 'Talentos', tecla: 'T', textura: TEXTURAS.ICO_TALENTOS, fn: () => this.abrirTalentos() },
+      { rotulo: 'Fabricação', tecla: 'C', textura: TEXTURAS.ICO_FABRICAR, fn: () => this.abrirFabricacao() },
+      { rotulo: 'Reinos', tecla: 'R', textura: TEXTURAS.ICO_REINOS, fn: () => this.abrirReinos() },
+      { rotulo: 'Portais', tecla: 'P', textura: TEXTURAS.ICO_PORTAIS, fn: () => this.abrirPainelDePortais() },
     ];
+
+    this.botoesMenu = [];
     let i = 0;
     for (const acao of acoes) {
       i += 1;
-      this.barraAcoes.add(
-        botao(this, 0, -i * 40, acao.rotulo, acao.fn, {
-          origem: [1, 1],
-          largura: 140,
-          altura: 32,
-          cor: 0x241c14,
-          corHover: 0x3a2c20,
-          corTexto: PERGAMINHO,
-          tamanho: '12px',
-        }).caixa,
-      );
+      const b = botao(this, 0, -i * 46, '', acao.fn, {
+        origem: [1, 1],
+        largura: 42,
+        altura: 42,
+        raio: 10,
+        cor: 0x241c14,
+        corHover: 0x4a3826,
+        corBorda: 0x8a6a2f,
+        alinhamento: 'center',
+      });
+
+      const img = this.add
+        .image(0, -21, acao.textura)
+        .setDisplaySize(22, 22)
+        .setOrigin(0.5)
+        .setAlpha(0.92);
+      b.caixa.add(img);
+
+      // Atalho de teclado tambem no clique do icone.
+      b.clique.on('pointerover', () => this.mostrarTooltip(acao.rotulo, acao.tecla));
+      b.clique.on('pointerout', () => this.esconderTooltip());
+
+      this.barraAcoes.add(b.caixa);
+      this.botoesMenu.push(b);
     }
+
     this.reposicionarAcoes();
   }
 
+  /** Dica de contexto ao passar o mouse no menu. */
+  mostrarTooltip(rotulo, tecla) {
+    this.esconderTooltip();
+    const box = caixaArredondada(this, 0, 0, 118, 28, {
+      raio: 8,
+      preenchimento: 0x0d0a07,
+      alfa: 0.95,
+      borda: 0x8a6a2f,
+      larguraBorda: 1,
+      origem: [1, 0.5],
+    });
+    const t = this.add
+      .text(-112, 0, `${rotulo}  [${tecla}]`, {
+        fontFamily: 'system-ui, sans-serif',
+        fontSize: '12px',
+        color: PERGAMINHO,
+      })
+      .setOrigin(1, 0.5);
+    box.add(t);
+    this.tooltip = box;
+    // Alinha a direita da barra de acoes.
+    box.setPosition(this.scale.width - 66, this.barraAcoes.y - this.botoesMenu.length * 23);
+  }
+
+  esconderTooltip() {
+    this.tooltip?.destroy(true);
+    this.tooltip = null;
+  }
+
   reposicionarAcoes() {
-    this.barraAcoes.setPosition(this.scale.width - 16, this.scale.height - 16);
+    this.esconderTooltip();
+    this.barraAcoes.setPosition(this.scale.width - 18, this.scale.height - 18);
     this.scale.on(Phaser.Scale.Events.RESIZE, this.reposicionarAcoes, this);
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () =>
       this.scale.off(Phaser.Scale.Events.RESIZE, this.reposicionarAcoes, this),
@@ -514,15 +575,12 @@ export class WorldScene extends Phaser.Scene {
     this.input.keyboard.on('keydown-R', () => this.abrirReinos());
     this.input.keyboard.on('keydown-P', () => this.abrirPainelDePortais());
 
-    this.input.keyboard.on('keydown-ESC', async () => {
-      if (this.painelAberto) {
-        this.fecharPaineis();
-        return;
-      }
-      if (!this.podeSair) return;
-      await this.persistir();
-      await sairDaConta();
-      this.scene.start('Login');
+    // ESC so fecha painel. Antes ele DESLOGAVA a conta quando nao havia painel
+    // aberto — apertar ESC para fechar algo e perder a sessao era facil, e
+    // parecia "o jogo me jogou para fora". Sair agora e um ato deliberado,
+    // pelo menu principal.
+    this.input.keyboard.on('keydown-ESC', () => {
+      this.fecharPaineis();
     });
 
     this.input.keyboard.on('keydown-F2', () => {
@@ -1017,9 +1075,10 @@ export class WorldScene extends Phaser.Scene {
       m.corpo.y = Phaser.Math.Clamp(m.corpo.y, 60, ALTURA_TILEMAP - 20);
       m.corpo.x = Phaser.Math.Clamp(m.corpo.x, 20, LARGURA_TILEMAP - 20);
 
-      // Barra de vida acima do monstro.
-      m.barraVida.fundo.setPosition(m.corpo.x - 16, m.corpo.y - 34);
-      m.barraVida.frente.setPosition(m.corpo.x - 15, m.corpo.y - 33);
+      // Barra de vida acima do monstro. A barra e um container unico, entao
+      // so ele precisa ser movido e ter o depth atualizado.
+      m.barraVida.container.setPosition(m.corpo.x - 16, m.corpo.y - 34);
+      m.barraVida.container.setDepth(m.corpo.y + 1);
       m.barraVida.atualizar(m.stats.vida / Math.max(1, m.stats.vidaMax));
     }
   }

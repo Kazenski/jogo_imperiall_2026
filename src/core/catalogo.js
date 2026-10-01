@@ -31,27 +31,75 @@ function mesclar(registros, semente) {
   return Array.from(mapa.values());
 }
 
+/** Quanto tempo esperar o Firestore antes de cair na semente. */
+const TEMPO_LIMITE_MS = 4000;
+
+/**
+ * Disputa a promise contra um relogio. Devolve `resolvao` quando a promise
+ * resolve, ou `resolvao` se ela nao resolver a tempo.
+ *
+ * Sem isso, uma leitura de Firestore pendurada (rede lenta, aba em segundo
+ * plano, projeto dormindo) segura o `create` da cena para sempre e o jogo fica
+ * preso em "Forjando o reino...".
+ */
+function comTempoLimite(promise, ms = TEMPO_LIMITE_MS) {
+  return new Promise((resolve) => {
+    let resolvido = false;
+    const finish = (valor) => {
+      if (resolvido) return;
+      resolvido = true;
+      clearTimeout(relogio);
+      resolve(valor);
+    };
+    const relogio = setTimeout(() => finish(null), ms);
+    promise.then(
+      (v) => finish(v),
+      () => finish(null),
+    );
+  });
+}
+
+let catalogoCache = null;
+
 /**
  * Carrega todo o catalogo. Se o Firebase nao estiver disponivel, devolve a
- * semente. Nunca lanca: falhas viram avisos e o jogo continua com a semente.
+ * semente. Nunca lanca e nunca trava: falhas viram avisos e o jogo continua
+ * com a semente.
  */
-export async function carregarCatalogo() {
-  const catalogo = {};
+export async function carregarCatalogo({ forcar = false } = {}) {
+  if (catalogoCache && !forcar) return catalogoCache;
+
   const avisos = [];
 
-  for (const [chave, repo] of Object.entries(FONTES)) {
+  // Todas as colecoes em paralelo: 7 leituras sequenciais demoravam 7x mais
+  // (e uma travada segurava todas as seguintes).
+  const chaves = Object.keys(FONTES);
+  const resultados = await Promise.all(
+    chaves.map(async (chave) => {
+      if (!firebaseDisponivel()) return [chave, null, null];
+      try {
+        const registros = await comTempoLimite(FONTES[chave].listar());
+        return [chave, registros, null];
+      } catch (erro) {
+        return [chave, null, erro?.message ?? String(erro)];
+      }
+    }),
+  );
+
+  const catalogo = {};
+  for (const [chave, registros, erro] of resultados) {
     const semente = SEMENTE[chave] ?? [];
     catalogo[chave] = semente.map((item) => ({ ...item }));
 
     if (!firebaseDisponivel()) continue;
 
-    try {
-      const registros = await repo.listar();
-      catalogo[chave] = mesclar(registros, semente);
-    } catch (erro) {
-      avisos.push(`${chave}: ${erro?.message ?? erro}`);
-      console.warn(`[catalogo] usando semente em "${chave}" (${erro?.message ?? erro})`);
+    if (registros === null) {
+      const motivo = erro ?? 'tempo limite esgotado';
+      avisos.push(`${chave}: ${motivo}`);
+      console.warn(`[catalogo] usando semente em "${chave}" (${motivo})`);
+      continue;
     }
+    catalogo[chave] = mesclar(registros, semente);
   }
 
   // Indices de acesso rapido.
@@ -66,7 +114,13 @@ export async function carregarCatalogo() {
   };
 
   catalogo.avisos = avisos;
+  catalogoCache = catalogo;
   return catalogo;
+}
+
+/** Descarta o cache (usar apos o admin mudar o catalogo). */
+export function limparCacheCatalogo() {
+  catalogoCache = null;
 }
 
 function indexar(lista) {

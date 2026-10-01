@@ -60,7 +60,7 @@ export class FabricacaoScene extends Phaser.Scene {
         corTexto: ativa ? '#14100c' : PERGAMINHO,
         origem: [0, 0.5],
       });
-      addTodos(this, b.caixa, b.label);
+
       x += b.caixa.width + 8;
     }
 

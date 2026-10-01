@@ -122,8 +122,23 @@ async function lerFirestore(uid) {
 export async function carregarProgresso(uid = null) {
   if (!uid || !firebaseDisponivel()) return lerLocal(uid);
 
+  // Sentinel distinto de `undefined`, que e um retorno legitimo de `lerFirestore`
+  // quando o documento ainda nao existe.
+  const SEM_RESPOSTA = Symbol('sem-resposta');
+
   try {
-    const dados = await lerFirestore(uid);
+    // Relogio de 4s: sem isso uma leitura pendurada segura a tela de login e o
+    // jogador fica achando que foi deslogado, sem nenhum erro visivel.
+    const dados = await Promise.race([
+      lerFirestore(uid),
+      new Promise((resolve) => setTimeout(() => resolve(SEM_RESPOSTA), 4000)),
+    ]);
+
+    if (dados === SEM_RESPOSTA) {
+      console.warn('[progresso] leitura no Firestore demorou demais, usando local');
+      return lerLocal(uid);
+    }
+
     if (!dados) {
       // Primeiro acesso: cria o documento.
       const novo = progressoInicial(uid);

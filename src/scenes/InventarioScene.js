@@ -243,7 +243,7 @@ export class InventarioScene extends Phaser.Scene {
         },
         { largura: 140, altura: 28, tamanho: '11px', cor: 0x7a4fd4, corHover: 0x9a6fe0, corTexto: '#fff' },
       );
-      this.detalhe.add([b.caixa, b.label]);
+      this.detalhe.add(b.caixa);
       botaoX += 150;
     }
     y += 40;
@@ -255,14 +255,14 @@ export class InventarioScene extends Phaser.Scene {
         this.estado.inventario.equipado[slot] = pilha.uid;
         this.toast(`${def.nome} equipado.`);
       }, { largura: 130, altura: 28, tamanho: '12px', cor: 0x8fd18f });
-      this.detalhe.add([b.caixa, b.label]);
+      this.detalhe.add(b.caixa);
       if (def?.tipo === 'ferramenta') {
         const b2 = botao(this, 210, y + 14, 'Construir com este', () => {
           this.blocoSelecionado = pilha.itemId;
           this.toast(`Bloco selecionado para construção: ${def.nome}`);
           this.fechar();
         }, { largura: 170, altura: 28, tamanho: '12px', cor: 0xd4af6a });
-        this.detalhe.add([b2.caixa, b2.label]);
+        this.detalhe.add(b2.caixa);
       }
       y += 40;
     }
@@ -278,7 +278,7 @@ export class InventarioScene extends Phaser.Scene {
           this.toast(r.motivo);
         }
       }, { largura: 120, altura: 28, tamanho: '12px', cor: 0x8fd18f });
-      this.detalhe.add([b.caixa, b.label]);
+      this.detalhe.add(b.caixa);
       y += 40;
     }
 
@@ -293,7 +293,7 @@ export class InventarioScene extends Phaser.Scene {
         this.atualizarDetalhe();
       }
     }, { largura: 110, altura: 28, tamanho: '12px', cor: 0xc96a5a, corHover: 0xd05a5a, corTexto: '#fff' });
-    this.detalhe.add([bDrop.caixa, bDrop.label]);
+    this.detalhe.add(bDrop.caixa);
 
     // Equipados atuais
     const equipados = SLOTS.filter((s) => this.estado.inventario.equipado[s]);
