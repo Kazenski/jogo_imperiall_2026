@@ -124,10 +124,13 @@ export class TalentosScene extends Phaser.Scene {
         if (!pre) continue;
         const origem = posicao(pre);
         const ativo = (this.estado.arvoreDesbloqueada ?? []).includes(preId);
+        // Origem [0, 0] e obrigatoria: `Line` tem displayOrigin derivado do
+        // comprimento, e com [0.5, 0.5] a linha e desenhada deslocada pela
+        // metade do proprio comprimento, ligando os nos no lugar errado.
         this.containerArvore.add(
           this.add
             .line(0, 0, origem.x + LARGURA_NO / 2, origem.y + ALTURA_NO / 2, destino.x + LARGURA_NO / 2, destino.y + ALTURA_NO / 2, ativo ? OURO : 0x3a2c20, ativo ? 0.9 : 0.4)
-            .setOrigin(0.5),
+            .setOrigin(0, 0),
         );
       }
     }

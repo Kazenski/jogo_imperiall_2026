@@ -9,6 +9,7 @@ export const ITENS_SEMENTE = [
   {
     id: 'terra',
     nome: 'Terra Fértil',
+    descricao: 'Terra fertil revistada de humus. Base de qualquer alicerce e materia-prima de quase toda transformacao.',
     tipo: 'bloco',
     uso: ['extracao', 'transformacao', 'estrutura'],
     raridade: 'comum',
@@ -23,6 +24,7 @@ export const ITENS_SEMENTE = [
   {
     id: 'pedra',
     nome: 'Pedra Rústica',
+    descricao: 'Pedra rustica arrancada do leito rochoso. Cara, heavy e indispensavel: e a moeda do Imperio.',
     tipo: 'bloco',
     uso: ['extracao', 'transformacao', 'estrutura'],
     raridade: 'comum',
@@ -37,6 +39,7 @@ export const ITENS_SEMENTE = [
   {
     id: 'madeira',
     nome: 'Madeira de Carvalho',
+    descricao: 'Madeira de carvalho de corte lento. Serve de estrutura, de combustivel e, trabalhada, de ferramenta.',
     tipo: 'bloco',
     uso: ['extracao', 'transformacao', 'estrutura', 'equipavel'],
     raridade: 'comum',
@@ -51,6 +54,7 @@ export const ITENS_SEMENTE = [
   {
     id: 'minerio_ferro',
     nome: 'Minério de Ferro',
+    descricao: 'Minerio de ferro bruto. Precisa de fundicao na Forja antes de virar ferramenta ou armadura.',
     tipo: 'recurso',
     uso: ['extracao', 'transformacao'],
     raridade: 'comum',
@@ -65,6 +69,7 @@ export const ITENS_SEMENTE = [
   {
     id: 'minerio_ouro',
     nome: 'Minério de Ouro',
+    descricao: 'Veios de ouro entre a pedra. Fonte de riqueza, mas exige mineracao de alto nivel e afiada.',
     tipo: 'recurso',
     uso: ['extracao', 'transformacao'],
     raridade: 'incomum',
@@ -79,6 +84,7 @@ export const ITENS_SEMENTE = [
   {
     id: 'cristal_arcano',
     nome: 'Cristal Arcano',
+    descricao: 'Cristal bruto impregnado de mana. As maquinas de nivel alto e o vidro arcano nascem daqui.',
     tipo: 'recurso',
     uso: ['extracao', 'transformacao', 'maquina'],
     raridade: 'raro',
@@ -93,6 +99,7 @@ export const ITENS_SEMENTE = [
   {
     id: 'essencia_eterea',
     nome: 'Essência Etérea',
+    descricao: 'Essencia condensada de um Reino Etereo. Rara, volatil e cara demais para ser descartada.',
     tipo: 'recurso',
     uso: ['extracao', 'transformacao'],
     raridade: 'epico',
@@ -109,6 +116,7 @@ export const ITENS_SEMENTE = [
   {
     id: 'bloco_pedra_reforcada',
     nome: 'Bloco de Pedra Reforçada',
+    descricao: 'Bloco de pedra calcada com residuo de mana. Dura muito mais que a pedra bruta.',
     tipo: 'estrutura',
     uso: ['estrutura'],
     raridade: 'comum',
@@ -123,6 +131,7 @@ export const ITENS_SEMENTE = [
   {
     id: 'bloco_madeira_tratada',
     nome: 'Bloco de Madeira Tratada',
+    descricao: 'Tabuas seladas com resina. Sustentam estruturas altas sem apodrecer.',
     tipo: 'estrutura',
     uso: ['estrutura'],
     raridade: 'comum',
@@ -137,6 +146,7 @@ export const ITENS_SEMENTE = [
   {
     id: 'bloco_vidro_arcano',
     nome: 'Bloco de Vidro Arcano',
+    descricao: 'Painel de vidro lapidado com runas. Deixa passar a luz do Portal e serve de janela ritual.',
     tipo: 'estrutura',
     uso: ['estrutura', 'utilizacao'],
     raridade: 'raro',
@@ -151,6 +161,7 @@ export const ITENS_SEMENTE = [
   {
     id: 'bloco_runico',
     nome: 'Bloco Rúnico',
+    descricao: 'Bloco entalhado com o selo dos reinos. Essencial para Portais Arcanos e prensas de alta potencia.',
     tipo: 'estrutura',
     uso: ['estrutura', 'maquina'],
     raridade: 'epico',
@@ -167,6 +178,7 @@ export const ITENS_SEMENTE = [
   {
     id: 'picareta_ferro',
     nome: 'Picareta de Ferro',
+    descricao: 'Picareta de ferro temperado. O primeiro salto de produtividade na mineracao.',
     tipo: 'ferramenta',
     uso: ['utilizacao', 'equipavel'],
     raridade: 'comum',
@@ -180,6 +192,7 @@ export const ITENS_SEMENTE = [
   {
     id: 'machado_aco',
     nome: 'Machado de Aço',
+    descricao: 'Machado de aco de lamina larga. Extrai madeira muito mais rapido que a mao nua.',
     tipo: 'ferramenta',
     uso: ['utilizacao', 'equipavel'],
     raridade: 'incomum',
@@ -193,6 +206,7 @@ export const ITENS_SEMENTE = [
   {
     id: 'picareta_runic',
     nome: 'Picareta Rúnica',
+    descricao: 'Picareta lapidada em cristal arcano. Perde-se entre os cristais e na rocha viva.',
     tipo: 'ferramenta',
     uso: ['utilizacao', 'equipavel'],
     raridade: 'lendario',
@@ -208,6 +222,7 @@ export const ITENS_SEMENTE = [
   {
     id: 'armadura_couro',
     nome: 'Armadura de Couro',
+    descricao: 'Giba de couro curtido. Barata e suficiente para nao morrer no primeiro slime.',
     tipo: 'equipavel',
     uso: ['equipavel'],
     raridade: 'comum',
@@ -223,6 +238,7 @@ export const ITENS_SEMENTE = [
   {
     id: 'armadura_placas',
     nome: 'Armadura de Placas',
+    descricao: 'Placas de metal cravadas sobre couro. Protege de verdade contra o que vier do submundo.',
     tipo: 'equipavel',
     uso: ['equipavel'],
     raridade: 'raro',
@@ -239,6 +255,7 @@ export const ITENS_SEMENTE = [
   {
     id: 'anel_arcano',
     nome: 'Anel Arcano',
+    descricao: 'Anel gravado com um selo de mana. Ampara os dedos com um fio de poder.',
     tipo: 'equipavel',
     uso: ['equipavel'],
     raridade: 'epico',
@@ -256,6 +273,7 @@ export const ITENS_SEMENTE = [
   {
     id: 'estacao_forja',
     nome: 'Forja Imperial',
+    descricao: 'Forja acesa com brasa permanente. Funde minerio em lingotes e molda ferramentas.',
     tipo: 'maquina',
     uso: ['maquina', 'estrutura'],
     raridade: 'comum',
@@ -270,6 +288,7 @@ export const ITENS_SEMENTE = [
   {
     id: 'estacao_alquimia',
     nome: 'Mesa Alquímica',
+    descricao: 'Mesa com caldeiras e frascos. Transforma essencias em pocoes e catalisadores.',
     tipo: 'maquina',
     uso: ['maquina', 'estrutura'],
     raridade: 'comum',
@@ -284,6 +303,7 @@ export const ITENS_SEMENTE = [
   {
     id: 'estacao_torno',
     nome: 'Torno Rúnico',
+    descricao: 'Torno movido a cristais. Depende de maquinas anteriores, mas multiplica a producao.',
     tipo: 'maquina',
     uso: ['maquina'],
     raridade: 'incomum',
@@ -298,6 +318,7 @@ export const ITENS_SEMENTE = [
   {
     id: 'prensa_arcana',
     nome: 'Prensa Arcana',
+    descricao: 'Prensa que compacta energia sob pressao. Produz os Orbes Arcanos de alto nivel.',
     tipo: 'maquina',
     uso: ['maquina'],
     raridade: 'epico',
@@ -314,6 +335,7 @@ export const ITENS_SEMENTE = [
   {
     id: 'orbe_arcano_menor',
     nome: 'Orbe Arcano Menor',
+    descricao: 'Orbe de energia menor. Eleva um item do nivel 1 ao 10.',
     tipo: 'orbe',
     uso: ['utilizacao'],
     raridade: 'comum',
@@ -326,6 +348,7 @@ export const ITENS_SEMENTE = [
   {
     id: 'orbe_arcano_medio',
     nome: 'Orbe Arcano Médio',
+    descricao: 'Orbe medio, mais denso. Leva um item do nivel 11 ao 25.',
     tipo: 'orbe',
     uso: ['utilizacao'],
     raridade: 'incomum',
@@ -338,6 +361,7 @@ export const ITENS_SEMENTE = [
   {
     id: 'orbe_arcano_superior',
     nome: 'Orbe Arcano Superior',
+    descricao: 'Orbe superior. Concentrado o bastante para levar um item do nivel 26 ao 40.',
     tipo: 'orbe',
     uso: ['utilizacao'],
     raridade: 'raro',
@@ -350,6 +374,7 @@ export const ITENS_SEMENTE = [
   {
     id: 'orbe_arcano_epico',
     nome: 'Orbe Arcano Épico',
+    descricao: 'Orbe epico. Para quem quer o item entre o nivel 41 e o 60.',
     tipo: 'orbe',
     uso: ['utilizacao'],
     raridade: 'epico',
@@ -362,6 +387,7 @@ export const ITENS_SEMENTE = [
   {
     id: 'orbe_arcano_lendario',
     nome: 'Orbe Arcano Lendário',
+    descricao: 'Orbe lendario. A forma mais alta de reforco. Do nivel 61 em diante.',
     tipo: 'orbe',
     uso: ['utilizacao'],
     raridade: 'lendario',
@@ -376,6 +402,7 @@ export const ITENS_SEMENTE = [
   {
     id: 'pocao_cura',
     nome: 'Poção de Cura',
+    descricao: 'Tonico de cura. Recupera 60 de Vida na hora. O limite por gole e a propria Vida maxima.',
     tipo: 'consumivel',
     uso: ['utilizacao'],
     raridade: 'comum',
@@ -388,6 +415,7 @@ export const ITENS_SEMENTE = [
   {
     id: 'pocao_poder',
     nome: 'Elixir de Poder',
+    descricao: 'Elixir de Poder. Recupera 50 de Poder imediatamente.',
     tipo: 'consumivel',
     uso: ['utilizacao'],
     raridade: 'incomum',

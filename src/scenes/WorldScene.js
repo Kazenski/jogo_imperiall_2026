@@ -515,15 +515,21 @@ export class WorldScene extends Phaser.Scene {
     this.txtOuro = uiTexto(this, 250, 34, '', { fontSize: '12px', color: OURO });
     this.hud.add([this.txtAtributos, this.txtOuro, this.txtVida, this.txtPoder]);
 
-    this.txtAjuda = uiTexto(
-      this,
-      this.scale.width - 18,
-      10,
-      'WASD/setas: andar | mouse: arrastar o mapa | E: usar/atacar | Q: construir | B: portal | I: mochila | T: talentos | C: fabricar'
-        + (this.isAdmin ? ' | F2: admin' : ''),
-      { fontSize: '11px', align: 'right' },
-    ).setOrigin(1, 0).setAlpha(0.65);
-    this.hud.add(this.txtAjuda);
+    // As dicas deixaram de ser um texto corrido no topo: viraram um botao que
+    // abre um modal. Um paragrafo de atalhos no canto da tela competia com o
+    // nome, o nivel e os recursos, e nao cabia em telas estreitas.
+    this.botaoDicas = botao(this, this.scale.width - 18, 10, 'Dicas  [H]', () => this.abrirDicas(), {
+      origem: [1, 0],
+      largura: 84,
+      altura: 26,
+      raio: 13,
+      cor: 0x241c14,
+      corHover: 0x3a2c20,
+      corBorda: 0x8a6a2f,
+      corTexto: PERGAMINHO,
+      tamanho: '11px',
+    });
+    this.hud.add(this.botaoDicas.caixa);
 
     this.toast = uiTexto(this, this.scale.width / 2, 110, '', {
       fontSize: '14px',
@@ -542,17 +548,103 @@ export class WorldScene extends Phaser.Scene {
   }
 
   aoRedimensionar() {
-    this.txtAjuda.setPosition(this.scale.width - 18, 10);
+    this.botaoDicas?.definirPosicao(this.scale.width - 18, 10);
     this.toast.setPosition(this.scale.width / 2, 110);
+  }
+
+  /**
+   * Modal de dicas e controles.
+   *
+   * Substitui a linha de texto que ficava solta no topo da tela. E um painel
+   * sobreposto (nao uma cena nova) porque precisa aparecer instantaneamente,
+   * sem passar pela pilha de cenas, e some no primeiro ESC/clique fora.
+   */
+  abrirDicas() {
+    if (this.modal?.active) {
+      this.fecharModal();
+      return;
+    }
+
+    const { width, height } = this.scale;
+    const w = Math.min(460, width - 48);
+    const h = Math.min(420, height - 64);
+    const x0 = Math.round((width - w) / 2);
+    const y0 = Math.round((height - h) / 2);
+
+    const capa = this.add
+      .rectangle(width / 2, height / 2, width, height, 0x000000, 0.6)
+      .setInteractive()
+      .setScrollFactor(0);
+    const box = this.add.container(0, 0).setDepth(3000).setScrollFactor(0);
+    this.modal = box;
+
+    box.add(capa);
+    box.add(painel(this, x0, y0, w, h));
+    box.add(uiTitulo(this, x0 + 24, y0 + 20, 'COMO JOGAR', '18px'));
+
+    const secao = [
+      ['Andar', 'W, A, S, D ou as setas'],
+      ['Olhar o mapa', 'arraste com o botao esquerdo do mouse'],
+      ['Usar / atacar / minerar', 'E'],
+      ['Construir o bloco selecionado', 'Q'],
+      ['Expor ou ocultar sua base no portal', 'B'],
+      ['Personagem, atributos e apelido', 'V'],
+      ['Mochila e Orbes Arcanos', 'I'],
+      ['Arvore de talentos', 'T'],
+      ['Fabricacao', 'C'],
+      ['Reinos Etereos', 'R'],
+      ['Lista de portais', 'P'],
+      ['Fechar qualquer painel', 'ESC'],
+    ];
+    if (this.isAdmin) secao.push(['Painel do administrador', 'F2']);
+
+    let y = y0 + 58;
+    for (const [rotulo, tecla] of secao) {
+      box.add(uiTexto(this, x0 + 24, y, rotulo, { fontSize: '12px' }));
+      box.add(
+        uiTexto(this, x0 + w - 24, y, tecla, { fontSize: '12px', color: OURO, align: 'right' })
+          .setOrigin(1, 0)
+          .setAlpha(0.9),
+      );
+      y += 21;
+    }
+
+    box.add(
+      uiTexto(
+        this,
+        x0 + 24,
+        y + 10,
+        'Dica: o botao Dica abre e fecha esta janela. Varios botoes aceitam o mouse.',
+        { fontSize: '11px' },
+      ).setAlpha(0.6),
+    );
+
+    box.add(
+      botao(this, x0 + w - 90, y0 + h - 30, 'Fechar', () => this.fecharModal(), {
+        largura: 140,
+        altura: 30,
+        tamanho: '12px',
+      }).caixa,
+    );
+
+    capa.on('pointerdown', () => this.fecharModal());
+    this.input.keyboard.once('keydown-ESC', () => this.fecharModal());
+    this.input.keyboard.once('keydown-H', () => this.fecharModal());
+  }
+
+  fecharModal() {
+    this.modal?.destroy(true);
+    this.modal = null;
   }
 
   /** Botoes flutuantes no canto inferior direito (atalhos de toque/atalho). */
   /**
    * Menu principal: barra vertical de icones na direita.
    *
-   * Cada botao e icone + rotulo, e o rotulo so aparece ao passar o mouse
-   * (tooltip). Antes These buttons usavam apenas a "caixa" e descartavam o
-   * texto, entao apareciam sem nenhuma legenda.
+   * Cada botao e so o icone (a dica de contexto traz o nome e a tecla). O icone
+   * e posicionado pelo proprio `botao()` pelo parametro `icone` — posicionar a
+   * imagem a mao punha o sprite na BORDA da caixa em vez do centro, e era o que
+   * fazia os botoes parecerem espremidos para a direita.
    */
   criarBarraDeAcoes() {
     this.barraAcoes = this.add.container(0, 0).setDepth(1000).setScrollFactor(0);
@@ -579,18 +671,10 @@ export class WorldScene extends Phaser.Scene {
         cor: 0x241c14,
         corHover: 0x4a3826,
         corBorda: 0x8a6a2f,
-        alinhamento: 'center',
+        icone: { texture: acao.textura, tamanho: 24, alfa: 0.92 },
       });
 
-      const img = this.add
-        .image(0, -21, acao.textura)
-        .setDisplaySize(22, 22)
-        .setOrigin(0.5)
-        .setAlpha(0.92);
-      b.caixa.add(img);
-
-      // Atalho de teclado tambem no clique do icone.
-      b.clique.on('pointerover', () => this.mostrarTooltip(acao.rotulo, acao.tecla));
+      b.clique.on('pointerover', () => this.mostrarTooltip(acao.rotulo, acao.tecla, i - 1));
       b.clique.on('pointerout', () => this.esconderTooltip());
 
       this.barraAcoes.add(b.caixa);
@@ -600,10 +684,18 @@ export class WorldScene extends Phaser.Scene {
     this.reposicionarAcoes();
   }
 
-  /** Dica de contexto ao passar o mouse no menu. */
-  mostrarTooltip(rotulo, tecla) {
+  /**
+   * Dica de contexto ao passar o mouse no menu.
+   *
+   * A posicao vem do botao real (`getBounds`), nao de recalcular o passo da
+   * barra aqui: duplicar essa conta fez a dica nascer 46px fora, porque a
+   * ancora do botao e `-(indice + 1) * 46` e nao `-indice * 46`.
+   */
+  mostrarTooltip(rotulo, tecla, indice = 0) {
     this.esconderTooltip();
-    const box = caixaArredondada(this, 0, 0, 118, 28, {
+    const largura = 132;
+    const altura = 28;
+    const box = caixaArredondada(this, 0, 0, largura, altura, {
       raio: 8,
       preenchimento: 0x0d0a07,
       alfa: 0.95,
@@ -611,17 +703,24 @@ export class WorldScene extends Phaser.Scene {
       larguraBorda: 1,
       origem: [1, 0.5],
     });
-    const t = this.add
-      .text(-112, 0, `${rotulo}  [${tecla}]`, {
-        fontFamily: 'system-ui, sans-serif',
-        fontSize: '12px',
-        color: PERGAMINHO,
-      })
-      .setOrigin(1, 0.5);
-    box.add(t);
+    box.add(
+      this.add
+        .text(-largura / 2, 0, `${rotulo}  [${tecla}]`, {
+          fontFamily: 'system-ui, sans-serif',
+          fontSize: '12px',
+          color: PERGAMINHO,
+        })
+        .setOrigin(0.5),
+    );
+
+    const alvo = this.botoesMenu[indice]?.clique;
+    const limites = alvo?.getBounds();
+    const y = limites ? limites.y + limites.height / 2 : this.barraAcoes.y - 21;
+    const x = limites ? limites.x : this.barraAcoes.x;
+
+    box.setPosition(x - 12, y);
+    box.setDepth(1100);
     this.tooltip = box;
-    // Alinha a direita da barra de acoes.
-    box.setPosition(this.scale.width - 66, this.barraAcoes.y - this.botoesMenu.length * 23);
   }
 
   esconderTooltip() {
@@ -722,6 +821,7 @@ export class WorldScene extends Phaser.Scene {
     this.input.keyboard.on('keydown-R', () => this.abrirReinos());
     this.input.keyboard.on('keydown-P', () => this.abrirPainelDePortais());
     this.input.keyboard.on('keydown-V', () => this.abrirStatus());
+    this.input.keyboard.on('keydown-H', () => this.abrirDicas());
 
     // ESC so fecha painel. Antes ele DESLOGAVA a conta quando nao havia painel
     // aberto — apertar ESC para fechar algo e perder a sessao era facil, e
@@ -759,6 +859,8 @@ export class WorldScene extends Phaser.Scene {
     for (const nome of PAINEIS_SOBREPOSTOS) {
       if (this.scene.isActive(nome)) this.scene.stop(nome);
     }
+    this.fecharModal();
+    this.esconderTooltip();
     this.painelAberto = false;
   }
 

@@ -49,9 +49,19 @@ export function caixaArredondada(scene, x, y, largura, altura, opcoes = {}) {
     origem = [0, 0],
   } = opcoes;
 
-  // Desenha sempre de (0,0) a (largura, altura) e desloca conforme a origem.
-  const dx = origem[0] === 1 ? -largura : 0;
-  const dy = origem[1] === 1 ? -altura : 0;
+  // A caixa e desenhada de (0,0) a (largura, altura) em espaco local, e `origem`
+  // diz qual ponto dela coincide com a posicao do container:
+  //   origem 0   -> canto superior esquerdo -> dx = 0
+  //   origem 0.5 -> centro                  -> dx = -largura / 2
+  //   origem 1   -> canto inferior direito  -> dx = -largura
+  // Logo `dx = -origem * largura`.
+  //
+  // Antes era um ternario que so reconhecia 0 e 1, entao a origem padrao
+  // [0.5, 0.5] caia no caso 0: todo botao nascia ancorado pelo canto superior
+  // esquerdo e aparecia deslocado para a direita e para baixo por metade do
+  // proprio tamanho — o que fazia todos os menus parecerem tortos.
+  const dx = -origem[0] * largura;
+  const dy = -origem[1] * altura;
 
   const g = scene.add.graphics();
   if (preenchimento !== null) {
@@ -88,8 +98,8 @@ export function caixaArredondada(scene, x, y, largura, altura, opcoes = {}) {
  * O container de um painel precisa disso para responder ao mouse.
  */
 export function areaDeClique(scene, x, y, largura, altura, origem = [0, 0]) {
-  const dx = origem[0] === 1 ? -largura : 0;
-  const dy = origem[1] === 1 ? -altura : 0;
+  const dx = -origem[0] * largura;
+  const dy = -origem[1] * altura;
   return scene.add
     .rectangle(x, y, largura, altura, 0xffffff, 0)
     .setOrigin(0, 0)
@@ -167,21 +177,34 @@ export function botao(scene, x, y, rotulo, onClick, opcoes = {}) {
     .setInteractive({ useHandCursor: true });
   box.add(clique);
 
-  // Icone opcional, alinhado a esquerda com o texto ao lado.
+  // Posicionamento do conteudo dentro da caixa.
+  //
+  // As tres situacoes sao distintas de proposito, e confundi-las era o que
+  // jogava o icone para fora do botao:
+  //  - so icone  -> icone no centro geometrico da caixa;
+  //  - icone+texto -> icone a esquerda, texto centrado no espaco restante;
+  //  - so texto  -> centralizado, ou alinhado dentro do padding.
+  const tamanhoIcone = icone?.tamanho ?? 22;
   let imgIcone = null;
   let textoX = largura / 2;
+
   if (icone) {
+    const temTexto = Boolean(rotulo);
+    // Com texto o icone fica na faixa da esquerda; sem texto, no centro.
+    const xIcone = temTexto ? padding + tamanhoIcone / 2 : largura / 2;
     imgIcone = scene.add
-      .image(dx + padding + 11, dy + altura / 2, icone.texture)
-      .setDisplaySize(icone.tamanho ?? 22, icone.tamanho ?? 22)
+      .image(dx + xIcone, dy + altura / 2, icone.texture)
+      .setDisplaySize(tamanhoIcone, tamanhoIcone)
       .setOrigin(0.5);
     imgIcone.setAlpha(icone.alfa ?? 0.95);
     box.add(imgIcone);
-    textoX = padding + 22 + 8 + (largura - padding * 2 - 30) / 2;
+
+    if (temTexto) {
+      const inicio = padding + tamanhoIcone + 8;
+      textoX = inicio + (largura - inicio - padding) / 2;
+    }
   } else if (alinhamento === 'left') {
     textoX = padding + (largura - padding * 2) / 2;
-  } else {
-    textoX = largura / 2;
   }
 
   const label = scene.add
@@ -192,6 +215,8 @@ export function botao(scene, x, y, rotulo, onClick, opcoes = {}) {
       align: 'center',
     })
     .setOrigin(0.5);
+  // Um rotulo vazio nao deve reservar espaco nem interceptar o clique.
+  label.setVisible(Boolean(rotulo));
   box.add(label);
 
   const aplicarCor = (c) => {
@@ -221,6 +246,79 @@ export function botao(scene, x, y, rotulo, onClick, opcoes = {}) {
     definirPosicao: (nx, ny) => box.setPosition(nx, ny),
     destruir: () => box.destroy(true),
   };
+}
+
+/**
+ * Quantas linhas uma lista de botoes ocupa, sem desenhar nada.
+ *
+ * `fluxoBotoes` desenha direto; antes de desenhar e preciso saber o espaco
+ * vertical que o bloco vai ocupar para ancorar o resto do painel. Calcular a
+ * quebra duas vezes em lugares diferentes e o jeito classico de um layout
+ * transbordar, entao a conta mora aqui e e usada pelas duas.
+ */
+export function medirFluxo(larguraUtil, larguras, vao = 8) {
+  let cx = 0;
+  let linhas = 0;
+  let naLinha = 0;
+  for (const largura of larguras) {
+    if (naLinha > 0 && cx + largura > larguraUtil) {
+      linhas += 1;
+      cx = 0;
+      naLinha = 0;
+    }
+    cx += largura + vao;
+    naLinha += 1;
+  }
+  return naLinha === 0 ? 0 : linhas + 1;
+}
+
+/**
+ * Distribui botoes em linhas, quebrando quando o proximo nao cabe.
+ *
+ * Existe porque os menus posicionavam botao por botao em coordenadas fixas
+ * (x = 70, 210, 220...), o que desalinha tudo assim que o rotulo muda de
+ * tamanho ou entra um botao novo. Aqui o chamador entrega a lista e a largura
+ * util; o espaco entre linhas e a altura total ocupada sao calculados aqui.
+ *
+ * `x` e `y` sao LOCAIS a `pai` e sao passados ao `botao()` como such.
+ *
+ * Importante: `Container.add()` NAO converte a posicao do filho para local.
+ * Verificado nesta versao do Phaser — um texto criado em (150, 260) e adicionado
+ * a um container em (100, 200) continua com x = 150 e e desenhado em 250, 460,
+ * ou seja, a posicao do pai e SOMADA. Por isso os botoes sao criados nas
+ * coordenadas locais diretas; somar `pai.x` aqui deslocaria tudo duas vezes.
+ */
+export function fluxoBotoes(pai, x, y, larguraUtil, botoes, opcoes = {}) {
+  const { vao = 8, altura = 30, passoLinha = 38 } = opcoes;
+
+  let cx = x;
+  let cy = y;
+  let usado = 0;
+
+  for (const item of botoes) {
+    if (!item) continue;
+    const largura = item.largura ?? item.opcoes?.largura ?? 160;
+    // O primeiro botao sempre entra, mesmo que alone nao caiba na faixa.
+    if (usado > 0 && cx + largura > x + larguraUtil) {
+      cx = x;
+      cy += passoLinha;
+      usado = 0;
+    }
+    const b = botao(pai.scene, cx + largura / 2, cy + altura / 2, item.rotulo, item.onClick, {
+      largura,
+      altura,
+      tamanho: item.tamanho ?? '12px',
+      cor: item.cor ?? 0xd4af6a,
+      corHover: item.corHover,
+      corTexto: item.corTexto,
+      corBorda: item.corBorda,
+    });
+    pai.add(b.caixa);
+    cx += largura + vao;
+    usado += 1;
+  }
+
+  return { alturaTotal: cy + altura - y, linhas: usado === 0 ? 0 : Math.round((cy - y) / passoLinha) + 1 };
 }
 
 /** Linha clicavel de lista (nome + detalhe). */
@@ -269,10 +367,17 @@ export function linhaLista(scene, x, y, largura, nome, detalhe, onClick) {
   return { caixa: box, clique, t1, t2 };
 }
 
-/** Chip pequeno (usado para tags de uso/raridade). */
+/**
+ * Chip pequeno (usado para tags de uso/raridade).
+ *
+ * Os filhos sao posicionados em coordenadas LOCAIS (0, 0) e o container recebe
+ * `x`/`y`. O texto antes nascia em `x + 5, y + 2` — absoluto — e, quando o chip
+ * era colocado dentro de outro container, aparecia deslocado pelo valor do
+ * pai mais o proprio `x` outra vez.
+ */
 export function chip(scene, x, y, rotulo, cor = 0x241c14, corTexto = PERGAMINHO) {
   const t = scene.add
-    .text(x, y, rotulo, {
+    .text(0, 0, rotulo, {
       ...FONTE_UI,
       fontSize: '10px',
       color: corTexto,
@@ -283,9 +388,8 @@ export function chip(scene, x, y, rotulo, cor = 0x241c14, corTexto = PERGAMINHO)
   const h = t.height + 5;
   const fundo = scene.add.graphics();
   fundo.fillStyle(cor, 1);
-  fundo.fillRoundedRect(0, 0, w, h, (h / 2));
-  fundo.fillStyle(cor, 1);
-  t.setPosition(x + 5, y + 2);
+  fundo.fillRoundedRect(0, 0, w, h, h / 2);
+  t.setPosition(5, 2);
 
   const container = scene.add.container(x, y);
   container.add(fundo);
