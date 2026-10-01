@@ -194,7 +194,7 @@ export class LoginScene extends Phaser.Scene {
       nome,
       email: user?.email ?? null,
       podeSair: Boolean(uid),
-      progresso,
+      estado: progresso,
       perfil,
       isAdmin: isAdminUser,
     });

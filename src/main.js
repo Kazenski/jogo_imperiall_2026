@@ -3,6 +3,10 @@ import { BootScene } from './scenes/BootScene.js';
 import { LoginScene } from './scenes/LoginScene.js';
 import { WorldScene } from './scenes/WorldScene.js';
 import { AdminScene } from './scenes/AdminScene.js';
+import { InventarioScene } from './scenes/InventarioScene.js';
+import { TalentosScene } from './scenes/TalentosScene.js';
+import { FabricacaoScene } from './scenes/FabricacaoScene.js';
+import { ReinosScene } from './scenes/ReinosScene.js';
 
 const config = {
   type: Phaser.AUTO,
@@ -27,7 +31,16 @@ const config = {
       debug: false,
     },
   },
-  scene: [BootScene, LoginScene, WorldScene, AdminScene],
+  scene: [
+    BootScene,
+    LoginScene,
+    WorldScene,
+    InventarioScene,
+    TalentosScene,
+    FabricacaoScene,
+    ReinosScene,
+    AdminScene,
+  ],
 };
 
 const game = new Phaser.Game(config);
