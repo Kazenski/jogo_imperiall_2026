@@ -36,3 +36,10 @@ desktop.ini
 *.tmp
 # Pasting de dist/ para servir localmente em outro prefixo. Nunca versionar.
 _preview/
+
+# Logs dos emuladores do Firebase (gerados por emulators:exec).
+*-debug.log
+firestore-debug.log
+firebase-debug.log
+ui-debug.log
+.pubsub-debug.log
