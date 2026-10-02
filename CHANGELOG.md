@@ -8,6 +8,65 @@ caminho mais rápido é relatar com o que você estava fazendo na tela.
 
 ---
 
+## Correção — os chunks cadastrados não contavam
+
+*v0.1.3 · Outubro de 2026*
+
+### O que acontecia
+
+Você cadastrava chunk no painel, ele aparecia na lista, e o jogo gerava o mundo
+**sem chão nenhum**. Três motivos, todos reais, e dois deles eram culpa do
+código.
+
+### 1. Chunk sem mundo nunca era sorteado
+
+O filtro de "este chunk pertence a este mundo" era aplicado onde o chunk era
+**posicionado** e **não** onde ele era **sorteado**. Resultado: um chunk sem
+mundo aparecia só na célula que você posicionou, e em nenhum outro lugar do
+mundo — mesmo com peso 7.
+
+Agora um chunk **sem mundo vale para qualquer reino**, que é o jeito de
+cadastrar uma caverna genérica uma vez só. E o filtro é o mesmo nos dois
+lugares, por construção.
+
+### 2. Peso 0 quer dizer "só onde eu posicionei"
+
+O campo já dizia isso, mas a lista mostrava só "peso 0", que parece valor errado.
+Agora a lista escreve **"peso 0 (só onde posicionado)"**, e a dica do campo
+avisa que 0 = nunca sorteado.
+
+### 3. O catálogo às vezes vinha da semente, em silêncio
+
+Acontece isto: a leitura do servidor demora mais que o limite, a função cai na
+semente — e a semente **não tem chunks**. O jogo abria normal, sem chão e sem
+aviso nenhum, e o painel continuava mostrando os chunks cadastrados. Era um
+"cadastrei e não conta" sem nenhuma pista.
+
+Agora:
+
+- o limite subiu de 4s para 9s (são 9 coleções lidas, eram 7)
+- se alguma coleção falha, **uma segunda tentativa** é feita só para ela
+- o jogo **avisa na tela** qual coleção veio da semente
+
+### 4. Dois chunks com o mesmo nome brigavam pelo mesmo lugar
+
+Quando dois chunks têm o mesmo peso **e o mesmo nome** na mesma célula, o
+vencedor dependia da ordem de leitura do Firestore — que não é garantida. Dois
+jogadores no mesmo mundo podiam ver terrenos diferentes.
+
+O desempate final agora é pelo `id`, que é único. E o mundo voltou a ser
+reproduzível, que é a propriedade que sustenta tudo.
+
+### O que fazer com os seus chunks
+
+- **Peso 0** é válido: o chunk fica só onde você posicionou. Deixe acima de 0 se
+  quiser que ele apareça em qualquer lugar.
+- **Mundo vazio** é válido: vale para todos os mundos.
+- **Blocos de subsolo** são obrigatórios para haver o que cavar. A lista avisa
+  quando um chunk não tem nenhum.
+
+---
+
 ## Terreno com altura — agora dá para cavar
 
 *v0.1.3 · Outubro de 2026*

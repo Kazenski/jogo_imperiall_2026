@@ -54,6 +54,125 @@ function ok(condicao, msg) {
 }
 
 // ---------------------------------------------------------------------
+// 0. Chunk SEM MUNDO vale para qualquer mundo
+// ---------------------------------------------------------------------
+//
+// Este é o caso que quebrou na prática: o admin cadastrou chunks e nada
+// aparecia no jogo. O filtro de mundo era aplicado no POSICIONAMENTO e não no
+// SORTEIO, então um chunk sem `mundoId` aparecia na célula onde foi posicionado
+// e em mais lugar nenhum — mesmo com peso 7.
+console.log('\n== chunk sem mundo ==');
+{
+  ok(
+    M.chunksDoMundo([{ id: 'a' }, { id: 'b', mundoId: 'r1' }, { id: 'c', mundoId: 'r2' }], 'r1')
+      .map((c) => c.id)
+      .join(',') === 'a,b',
+    'sem mundo + do mundo atual entram; de outro mundo não',
+  );
+  ok(
+    M.chunksDoMundo([{ id: 'a' }], undefined).length === 1,
+    'mundo indefinido ainda aceita o chunk sem mundo',
+  );
+
+  const semMundo = { ...RAIZ_CHUNK, mundoId: undefined, peso: 7 };
+  const comPesoZero = { ...RAIZ_CHUNK, mundoId: 'r1', peso: 0 };
+  const MUNDO_A = { id: 'r1', largura: 128, altura: 128, seedBase: 'a' };
+
+  const sorteado = M.gerarMundoEmChunks(MUNDO_A, [semMundo], 'u1');
+  // `sorteado: true` = saiu do sorteio por peso. É ESSA linha que estava
+  // faltando: o teste contava as células posicionadas e dava 1, parecendo
+  // que o chunk não aparecia em lugar nenhum.
+  const sorteadas = sorteado.celulas.filter((c) => c.sorteado);
+  const posicionadas = sorteado.celulas.filter((c) => !c.sorteado);
+
+  ok(
+    sorteadas.length > 0,
+    `chunk SEM mundo e peso 7 aparece no preenchimento automatico (${sorteadas.length} celulas)`);
+  ok(
+    posicionadas.length === 1,
+    `e so a celula posicionada fica de fora do sorteio (${posicionadas.length})`);
+
+  const soPesoZero = M.gerarMundoEmChunks(MUNDO_A, [comPesoZero], 'u1');
+  ok(soPesoZero.celulas.every((c) => c.sorteado === false),
+    'peso 0 nunca é sorteado — só existe onde foi posicionado');
+  ok(soPesoZero.celulas.length === 1,
+    `peso 0 só cobre a célula posicionada (${soPesoZero.celulas.length})`);
+
+  // O terreno tem de obedecer a MESMA regra, senão o mapa e o chão divergem.
+  const terreno = M.gerarTerrenoMundo(MUNDO_A, [semMundo], { seed: 'u1' });
+  ok(terreno.size > 0, `o terreno também usa o chunk sem mundo (${terreno.size} células)`);
+
+  const soDoOutroMundo = M.gerarTerrenoMundo(
+    MUNDO_A,
+    [{ ...RAIZ_CHUNK, mundoId: 'OUTRO' }],
+    { seed: 'u1' },
+  );
+  ok(soDoOutroMundo.size === 0, 'chunk de outro mundo não gera terreno aqui');
+}
+
+// ---------------------------------------------------------------------
+// 0b. O cenário real que deu "cadastrei e não contou"
+// ---------------------------------------------------------------------
+//
+// Os três chunks exatamente como apareceram no painel: nenhum com mundo, dois
+// com peso 0, e todos posicionados perto. Reproduzido aqui porque é o caso que
+// o admin vive.
+console.log('\n== cenário real do painel ==');
+{
+  const CHUNKS_DO_PAINEL = [
+    { id: 'a1', nome: 'AAAAAA', mundoId: undefined, peso: 0, posX: 1, posY: 1, tamanhoBlocos: 16,
+      blocosSuperficie: ['grama'], blocosSubSolo: ['terra'], alturaBase: 10,
+      alturaVariacao: 2, profundidadeMin: 4, profundidadeMax: 8, mobsNativas: ['slime'] },
+    { id: 'a2', nome: 'AAAAAA', mundoId: undefined, peso: 0, posX: 1, posY: 1, tamanhoBlocos: 16,
+      blocosSuperficie: ['grama'], blocosSubSolo: ['terra'], alturaBase: 10,
+      alturaVariacao: 2, profundidadeMin: 4, profundidadeMax: 8, mobsNativas: ['slime'] },
+    { id: 'c1', nome: 'Chunk0001', mundoId: undefined, peso: 7, posX: 1, posY: 0, tamanhoBlocos: 8,
+      blocosSuperficie: ['grama'], blocosSubSolo: ['terra'], alturaBase: 10,
+      alturaVariacao: 2, profundidadeMin: 4, profundidadeMax: 8, mobsNativas: ['slime'] },
+  ];
+
+  const mundo = { id: 'r1', largura: 60, altura: 44, seedBase: 'reino' };
+  const terreno = M.gerarTerrenoMundo(mundo, CHUNKS_DO_PAINEL, { seed: 'u1' });
+
+  ok(terreno.size > 0, `o terreno nasce dos 3 chunks (${terreno.size} células)`);
+
+  const comChao = new Set();
+  let superficie = 0;
+  let subsolo = 0;
+  for (const cel of terreno.values()) {
+    if (cel.camada === 'superficie') { superficie += 1; comChao.add(cel.x); }
+    else subsolo += 1;
+  }
+  ok(comChao.size > 0, `há chão em ${comChao.size} colunas`);
+  ok(subsolo > 0, `e ${subsolo} células de subsolo para cavar`);
+  ok(superficie > 0, `com ${superficie} de superfície`);
+
+  // O chunk de peso 7 tem de aparecer além do ponto onde foi posicionado.
+  const celulas = M.gerarMundoEmChunks(mundo, CHUNKS_DO_PAINEL, 'u1').celulas;
+  const sorteadas = celulas.filter((c) => c.sorteado);
+  ok(sorteadas.length > 0,
+    `o chunk de peso 7 preenche ${sorteadas.length} células fora do desenho`);
+
+  // Os dois de peso 0 estão na MESMA célula (1,1) e têm o MESMO nome. É o caso
+  // em que peso e nome não desempatam, e quem vence não pode depender da ordem
+  // de leitura do Firestore — ou dois jogadores veem terrenos diferentes.
+  const indice = M.indexarChunks(CHUNKS_DO_PAINEL);
+  const vencedor = M.chunkVigente(indice, 1, 1);
+  ok(['a1', 'a2'].includes(vencedor?.id), `na célula 1,1 vence um dos dois (${vencedor?.id})`);
+
+  const invertido = M.indexarChunks([...CHUNKS_DO_PAINEL].reverse());
+  ok(M.chunkVigente(invertido, 1, 1)?.id === vencedor?.id,
+    `a ordem de leitura não muda quem vence (${M.chunkVigente(invertido, 1, 1)?.id})`);
+
+  const soODuplicado = M.indexarChunks([
+    { id: 'zzz', nome: 'igual', peso: 0, posX: 5, posY: 5 },
+    { id: 'aaa', nome: 'igual', peso: 0, posX: 5, posY: 5 },
+  ]);
+  ok(M.chunkVigente(soODuplicado, 5, 5)?.id === 'aaa',
+    'com nome e peso iguais, o desempate é pelo id (menor primeiro)');
+}
+
+// ---------------------------------------------------------------------
 // 1. Grade: a célula é o chunk
 // ---------------------------------------------------------------------
 console.log('\n== a célula do mapa é um chunk ==');
@@ -67,6 +186,21 @@ console.log('\n== a célula do mapa é um chunk ==');
     'blocoParaChunk coloca 0..31 no chunk 0 e 32..63 no chunk 1');
   ok(M.blocoParaChunk(64, 16) === 4, 'blocoParaChunk respeita o tamanho do chunk');
   ok(M.chunkParaBloco(2, 32) === 64, 'chunkParaBloco volta para o primeiro bloco');
+
+  // O terreno tem de gerar o número de colunas que o admin marcou. Gerar
+  // sempre 32 dentro de uma célula que o painel desenhou como 8×8 faz o chunk
+  // vazar para o vizinho.
+  ok(M.tamanhoDoChunk({ tamanhoBlocos: 8 }) === 8, 'o chunk usa o tamanho escolhido');
+  ok(M.tamanhoDoChunk({ tamanhoBlocos: 64 }) === 64, 'tamanho grande respeitado');
+  ok(M.tamanhoDoChunk({}) === 32, 'sem tamanho, cai no padrão');
+  ok(M.tamanhoDoChunk({ tamanhoBlocos: 7 }) === 32, 'tamanho fora da lista cai no padrão');
+  ok(M.tamanhoDoChunk(null) === 32, 'chunk nulo cai no padrão');
+
+  const pequeno = M.gerarTerreno(
+    { ...RAIZ_CHUNK, tamanhoBlocos: 8 },
+    M.tamanhoDoChunk({ tamanhoBlocos: 8 }),
+  );
+  ok(pequeno.length === 8, `terreno de um chunk 8×8 tem 8 colunas (${pequeno.length})`);
 }
 
 // ---------------------------------------------------------------------

@@ -679,7 +679,7 @@ export const CAMPOS_CHUNK = [
 
   // ---- Onde ele fica ----
   { chave: 'mundoId', rotulo: 'Mundo', tipo: 'select', opcoes: [], fonte: 'reinos',
-    dica: 'O chunk pertence a este mundo. O mapa ao lado mostra a posição dele.' },
+    dica: 'O chunk pertence a este mundo. Deixando VAZIO, ele vale para todos os mundos — é o jeito de cadastrar uma caverna genérica uma vez só.' },
   { chave: 'biomaId', rotulo: 'Bioma', tipo: 'select', opcoes: [], fonte: 'biomas',
     dica: 'Bioma deste chunk. Se vazio, vale o bioma padrão do mundo.' },
   { chave: 'tamanhoBlocos', rotulo: 'Tamanho (blocos por lado)', tipo: 'select',
@@ -697,7 +697,7 @@ export const CAMPOS_CHUNK = [
 
   // ---- Quais chunks ganham aqui ----
   { chave: 'peso', rotulo: 'Peso no sorteio', tipo: 'numero',
-    dica: 'Se a geração preenche esta célula ao acaso, o peso decide quão provável o chunk é. Maior = mais frequente. 0 = nunca por sorteio (só onde você colocou).' },
+    dica: 'Se a geração preenche esta célula ao acaso, o peso decide quão provável o chunk é. Maior = mais frequente. ATENÇÃO: 0 = NUNCA sorteado — o chunk só existe nas células onde você posicionou no mapa. Deixe acima de 0 para ele aparecer em qualquer lugar.' },
   { chave: 'sobrescrever', rotulo: 'Sobrescreve o bioma', tipo: 'select',
     opcoes: [
       { valor: false, rotulo: 'Não — soma ao bioma' },
@@ -714,7 +714,7 @@ export const CAMPOS_CHUNK = [
     dica: 'A casca de cima. Se vários, o computador sorteia entre eles com o peso de cada bloco.' },
   { chave: 'blocosSubSolo', rotulo: 'Blocos de subsolo', tipo: 'multiselec',
     opcoes: [], fonte: 'blocos',
-    dica: 'O que existe abaixo da superfície. É isto que o jogador cava.' },
+    dica: 'O que existe abaixo da superfície. É isto que o jogador cava. SEM nenhum bloco aqui, o chunk tem só a casca de cima e não há o que escavar.' },
   { chave: 'profundidadeMin', rotulo: 'Profundidade mínima', tipo: 'numero',
     dica: 'Camadas de subsolo garantidas. 0 = só a superfície.' },
   { chave: 'profundidadeMax', rotulo: 'Profundidade máxima', tipo: 'numero',
@@ -880,7 +880,15 @@ export const RESUMO = {
   npcs: (d) => `${(d.tipos ?? []).join(', ') || '—'} · movimento ${d.movimento ?? 'suave'}`,
   servidores: (d) => `${d.tipo ?? '—'} · máx ${d.maxJogadores ?? 20} jogadores`,
   chunks: (d) =>
-    `${d.posX ?? 0},${d.posY ?? 0} · ${d.tamanhoBlocos ?? 32}bl · peso ${d.peso ?? 1} · ` +
-    `${(d.blocosSuperficie ?? []).length} sup · ${(d.mobsNativas ?? []).length} mobs · ` +
-    `${(d.npcs ?? []).length} npcs`,
+    `${d.posX ?? 0},${d.posY ?? 0} · ${d.tamanhoBlocos ?? 32}bl · ` +
+    // `peso 0` e `sem mundo` são as duas maneiras de um chunk existir no painel
+    // e não aparecer no jogo, e nenhuma delas é óbvia olhando a lista. Dizer
+    // aqui é mais barato do que o admin descobrir caves olhando o mundo.
+    `${(Number(d.peso) || 0) > 0 ? `peso ${d.peso}` : 'peso 0 (só onde posicionado)'} · ` +
+    `${d.mundoId ? 'com mundo' : 'sem mundo (vale para todos)'} · ` +
+    `${(d.blocosSuperficie ?? []).length} sup · ` +
+    `${(d.blocosSubSolo ?? []).length} sub` +
+    ((d.blocosSubSolo ?? []).length === 0 ? ' ⚠ sem subsolo = nada para cavar' : '') +
+    ` · ${(d.mobsNativas ?? []).length} mobs · ${(d.npcs ?? []).length} npcs` +
+    ((d.baus ?? []).length ? ` · ${d.baus.length} baús` : ''),
 };

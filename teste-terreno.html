@@ -72,6 +72,14 @@
         { id: 'pancada', nome: 'Pancada', tipo: 'equipavel', cor: 0xc394d0 },
       ];
 
+      // Reproduz os chunks do painel de verdade: dois SEM MUNDO com peso 0
+      // (só valem onde foram posicionados) e um sem mundo com peso 7.
+      const CHUNKS_REAIS = [
+        { ...CHUNK, id: 'a1', nome: 'AAAAAA', mundoId: undefined, peso: 0, posX: 1, posY: 1, tamanhoBlocos: 16 },
+        { ...CHUNK, id: 'a2', nome: 'AAAAAA b', mundoId: undefined, peso: 0, posX: 1, posY: 1, tamanhoBlocos: 16 },
+        { ...CHUNK, id: 'c1', nome: 'Chunk0001', mundoId: undefined, peso: 7, posX: 1, posY: 0, tamanhoBlocos: 8 },
+      ];
+
       const CATALOGO_FALSO = {
         itens: ITENS,
         classes: [],
@@ -79,7 +87,7 @@
         recipes: [],
         monsters: [],
         worldTemplates: [{ id: 'r-teste', nome: 'Teste', largura: 60, altura: 44, bioma: 'campo' }],
-        chunks: [CHUNK],
+        chunks: CHUNKS_REAIS,
         npcs: [],
         biomas: [],
         achievements: [],
@@ -110,7 +118,35 @@
         scene: [BootScene, WorldScene],
       });
 
-      jogo.events.once('ready', async () => {
+      // Nao dependemos do evento `ready`: ele pode disparar antes desta linha
+      // rodar, e o sintoma e silencioso — o harness fica em "carregando…" sem
+      // erro nenhum no console. Esperar a cena existir e iniciar o mundo num
+      // polling e a versao que nao tem essa corrida.
+      const esperar = (condicao, ms = 20000) =>
+        new Promise((res, rej) => {
+          const inicio = Date.now();
+          const t = setInterval(() => {
+            let passou = false;
+            try {
+              passou = Boolean(condicao());
+            } catch (e) {
+              clearInterval(t);
+              rej(e);
+              return;
+            }
+            if (passou) { clearInterval(t); res(); }
+            else if (Date.now() - inicio > ms) {
+              clearInterval(t);
+              rej(new Error('timeout esperando a cena do mundo'));
+            }
+          }, 60);
+        });
+
+      (async () => {
+        // A cena do World e registrada desde a construcao do jogo — nao ha
+        // pelo que esperar, so guaranteeing que o boot terminou.
+        await esperar(() => jogo.isRunning && jogo.scene.getScene('World'));
+
         const estado = estadoInicial();
         estado.nivel = 1;
         estado.vidaMax = 500;
@@ -118,16 +154,16 @@
         estado.posicao = { x: 480, y: 120 };
 
         const cena = jogo.scene.getScene('World');
-        cena.scene.start('World', { uid: null, podeSair: false, perfil: null, estado, isAdmin: false });
+        // Inicia pelo SCENE MANAGER, não pelo `cena.scene`. Chamar
+        // `scenePlugin.start` numa cena que ainda não está ativa é no-op
+        // silencioso: `init()` nunca roda, `pronto` fica false para sempre e
+        // não aparece erro no console.
+        jogo.scene.start('World', { uid: null, podeSair: false, perfil: null, estado, isAdmin: false });
 
         // `scene.start` devolve a cena, nao uma promise: o `create()` continua
         // rodando (ele e async, carrega o catalogo). Injetar aqui rodaria com
         // `this.estado` ainda nulo, e `criarTerreno` rebentaria.
-        await new Promise((res) => {
-          const t = setInterval(() => {
-            if (cena.pronto) { clearInterval(t); res(); }
-          }, 60);
-        });
+        await esperar(() => cena.pronto);
 
         // O `create()` faz `this.catalogo = await carregarCatalogo()`, que
         // SOBRESCREVE qualquer coisa posta antes. Por isso o catálogo falso e
@@ -139,6 +175,10 @@
         // Deixa o jogador em cima do chao, para a mira cair em terra.
         const primeiro = [...cena.terreno.values()].find((c) => c.camada === 'superficie');
         if (primeiro) cena.jogador.setPosition(primeiro.x * 32 + 16, primeiro.y * 32 - 40);
+
+        relatar('cenario pronto');
+      })().catch((e) => {
+        hud.textContent = 'FALHA no harness: ' + (e && e.message ? e.message : e);
       });
 
       // ---------- acoes de teste ----------

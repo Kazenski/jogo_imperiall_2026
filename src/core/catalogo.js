@@ -48,8 +48,15 @@ function mesclar(registros, semente) {
   return Array.from(mapa.values());
 }
 
-/** Quanto tempo esperar o Firestore antes de cair na semente. */
-const TEMPO_LIMITE_MS = 4000;
+/**
+ * Quanto tempo esperar o Firestore antes de cair na semente.
+ *
+ * Eram 4s com 7 colecoes. Sao 9 agora, e uma delas (`chunks`) e o que gera o
+ * terreno inteiro: perder a semente dela deixa o mundo sem chao, sem aviso na
+ * tela. Rede lenta de celular passa de 4s com folga, entao o limite era curto
+ * demais para o numero de leituras.
+ */
+const TEMPO_LIMITE_MS = 9000;
 
 /**
  * Disputa a promise contra um relogio. Devolve `resolvao` quando a promise
@@ -79,19 +86,17 @@ function comTempoLimite(promise, ms = TEMPO_LIMITE_MS) {
 let catalogoCache = null;
 
 /**
- * Carrega todo o catalogo. Se o Firebase nao estiver disponivel, devolve a
- * semente. Nunca lanca e nunca trava: falhas viram avisos e o jogo continua
- * com a semente.
+ * Le as colecoes do catalogo, todas em paralelo.
+ *
+ * Paralelo porque 9 leituras sequenciais demoravam 9x mais, e uma travada
+ * segurava todas as seguintes.
+ *
+ * @param {string[]} [apenas]  se dado, lê só estas chaves
+ * @returns {Promise<Array<[string, any, string|null]>>}
  */
-export async function carregarCatalogo({ forcar = false } = {}) {
-  if (catalogoCache && !forcar) return catalogoCache;
-
-  const avisos = [];
-
-  // Todas as colecoes em paralelo: 7 leituras sequenciais demoravam 7x mais
-  // (e uma travada segurava todas as seguintes).
-  const chaves = Object.keys(FONTES);
-  const resultados = await Promise.all(
+async function lerTodas(apenas = null) {
+  const chaves = apenas ?? Object.keys(FONTES);
+  return Promise.all(
     chaves.map(async (chave) => {
       if (!firebaseDisponivel()) return [chave, null, null];
       try {
@@ -102,6 +107,36 @@ export async function carregarCatalogo({ forcar = false } = {}) {
       }
     }),
   );
+}
+
+/**
+ * Carrega todo o catalogo. Se o Firebase nao estiver disponivel, devolve a
+ * semente. Nunca lanca e nunca trava: falhas viram avisos e o jogo continua
+ * com a semente.
+ */
+export async function carregarCatalogo({ forcar = false, tentativas = 2 } = {}) {
+  if (catalogoCache && !forcar) return catalogoCache;
+
+  // UmaCollection que falha vira a SEMENTE, e a semente nao tem chunks, nem
+  // NPCs, nem biomas. O jogo continua — e fica sem terreno, sem baus e sem
+  // NPCs, sem nenhuma mensagem na tela. Era o sintoma de "cadastrei os chunks
+  // e nao conta na geracao".
+  //
+  // Por isso: uma unica tentativa nao decide. A segunda so acontece para as
+  // colecoes que falharam, que e o caso comum (rede lenta na abertura) e
+  // custa quase nada quando deu certo.
+  let resultados = await lerTodas();
+  if (tentativas > 1 && resultados.some(([, r]) => r === null)) {
+    const paraRefazer = resultados.filter(([, r]) => r === null).map(([k]) => k);
+    console.warn(`[catalogo] ${paraRefazer.length} coleção(ões) falharam, tentando de novo`);
+    const segunda = await lerTodas(paraRefazer);
+    resultados = resultados.map((linha) => {
+      const refez = segunda.find(([chave]) => chave === linha[0]);
+      return refez && refez[1] !== null ? refez : linha;
+    });
+  }
+
+  const avisos = [];
 
   const catalogo = {};
   for (const [chave, registros, erro] of resultados) {

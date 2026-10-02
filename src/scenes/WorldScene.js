@@ -43,6 +43,8 @@ import {
   chaveCelula,
   espalharBausEItens,
   chunkParaBloco,
+  tamanhoDoChunk,
+  chunksDoMundo,
 } from '../core/mundo.js';
 import { VELOCIDADE, OURO, PERGAMINHO } from '../constants.js';
 import {
@@ -141,7 +143,16 @@ export class WorldScene extends Phaser.Scene {
     // olhando uma tela preta — e foi exatamente o que aconteceu na primeira
     // versão, num mundo sem chunks.
     if (this.terreno?.size === 0) {
-      this.mostrarToast('Nenhum chunk cadastrado: o mundo esta liso. Cadastre na aba Chunks.', 4200);
+      this.mostrarToast(this.diagnosticoChunks(), 5200);
+    } else if (this.catalogo?.avisos?.length) {
+      // Alguma coleção veio da semente. O jogo funciona, mas o conteúdo que o
+      // admin cadastrou — chunks, NPCs, biomas — NÃO está aqui. Sem isto o
+      // jogador acha que cadastrou errado.
+      this.mostrarToast(
+        `Carregou ${this.catalogo.avisos.length} coleção(ões) da semente: ` +
+          `${this.catalogo.avisos.join(', ')}.`,
+        6000,
+      );
     }
 
     this.carregando.destroy();
@@ -391,10 +402,10 @@ export class WorldScene extends Phaser.Scene {
     this.imagensBau = new Map();
     this.imagensItemChao = new Map();
 
-    const chunks = this.catalogo?.chunks ?? [];
+    // Mesmo filtro do terreno: chunk sem mundo vale para qualquer reino.
+    const chunks = chunksDoMundo(this.catalogo?.chunks ?? [], this.reinoAtual?.id);
     for (const chunk of chunks) {
-      if (chunk?.mundoId && chunk.mundoId !== this.reinoAtual?.id) continue;
-      const espalha = espalharBausEItens(chunk, TAMANHO_CHUNK_PADRAO);
+      const espalha = espalharBausEItens(chunk, tamanhoDoChunk(chunk));
 
       for (const bau of espalha.baus) {
         // Não põe baú dentro da terra: um baú soterrado é inacessível, e o
@@ -515,6 +526,52 @@ export class WorldScene extends Phaser.Scene {
     this.imagensItemChao.delete(chaveCelula(item.x, item.y));
     this.ganharXp(1);
     this.persistir();
+  }
+
+  /**
+ * Explica, em uma frase, por que o mundo saiu liso.
+ *
+ * "Nenhum chunk cadastrado" é quase sempre mentira: geralmente HÁ chunks no
+ * painel, e o que falta é um detalhe — nenhum com peso, ou todos apontando
+ * para outro mundo, ou sem bloco de subsolo. Sem dizer qual, o admin cadastro
+ * cinco chunks e não entende nada.
+ */
+  diagnosticoChunks() {
+    const todos = this.catalogo?.chunks ?? [];
+    const falhou = (this.catalogo?.avisos ?? []).filter((a) => a.startsWith('chunks'));
+    if (!todos.length && falhou.length) {
+      return `Mundo liso: os chunks NAO carregaram do servidor (${falhou[0]}). O jogo está usando a semente, que não tem chunks. Recarregue a página.`;
+    }
+    if (!todos.length) {
+      return 'Mundo liso: nenhum chunk cadastrado. Crie um na aba Chunks do painel.';
+    }
+
+    const doMundo = todos.filter((c) => !c.mundoId || c.mundoId === this.reinoAtual?.id);
+    const comPeso = doMundo.filter((c) => (Number(c.peso) || 0) > 0);
+    const posicionados = doMundo.filter(
+      (c) => Number.isFinite(Number(c.posX)) && Number.isFinite(Number(c.posY)),
+    );
+    const semSubsolo = doMundo.filter(
+      (c) => (c.blocosSubSolo ?? []).length === 0,
+    );
+
+    const partes = [];
+    if (!doMundo.length) {
+      partes.push(`${todos.length} chunk(s) cadastrados, nenhum deste mundo`);
+    } else {
+      partes.push(`${doMundo.length} chunk(s) deste mundo`);
+    }
+    if (!comPeso.length) {
+      partes.push('nenhum com peso (peso 0 = só onde você posicionou no mapa)');
+    }
+    if (posicionados.length) {
+      partes.push(`${posicionados.length} posicionado(s)`);
+    }
+    if (doMundo.length && semSubsolo.length === doMundo.length) {
+      partes.push('nenhum tem bloco de subsolo — sem subsolo não há o que cavar');
+    }
+
+    return `Mundo liso: ${partes.join(' · ')}.`;
   }
 
   texturaDoItem(def) {

@@ -227,6 +227,31 @@ export function contarBlocos(base, itemId) {
 
 export const TAMANHO_CHUNK_PADRAO = 32;
 
+/** Os tamanhos de chunk que o painel oferece. Espelha `CAMPOS_CHUNK`. */
+export const TAMANHOS_CHUNK = [8, 16, 32, 64];
+
+/** Lado do chunk em blocos, com o valor do chunk caindo no padrão. */
+export function tamanhoDoChunk(chunk) {
+  const n = Number(chunk?.tamanhoBlocos);
+  return TAMANHOS_CHUNK.includes(n) ? n : TAMANHO_CHUNK_PADRAO;
+}
+
+/**
+ * Chunks que valem para um mundo.
+ *
+ * `mundoId` vazio = chunk SEM MUNDO, válido para qualquer reino. É o que
+ * permite cadastrar uma "caverna genérica" uma vez e usá-la em todos os
+ * mundos, em vez de duplicar o registro por mundo.
+ *
+ * Este filtro é usado em DOIS lugares — posicionamento e sorteio — e precisa
+ * ser o MESMO nos dois. Quando os dois divergiram, um chunk sem mundo aparecia
+ * só onde o admin posicionou e nunca mais: o sintoma de "cadastrei e não
+ * contou".
+ */
+export function chunksDoMundo(chunks, mundoId) {
+  return (chunks ?? []).filter((c) => !c?.mundoId || c.mundoId === mundoId);
+}
+
 /** Converte coordenadas de bloco em coordenadas de chunk. */
 export function blocoParaChunk(bloco, tamanho = TAMANHO_CHUNK_PADRAO) {
   return Math.floor(bloco / tamanho);
@@ -272,10 +297,25 @@ export function chunkVigente(porCelula, cx, cy, rng = null) {
   if (!lista?.length) return sorteiaChunk(null, rng);
   if (lista.length === 1) return lista[0];
 
+  // Três níveis de desempate, e o último não é opcional.
+  //
+  // Peso e nome resolvem quase tudo. Mas DOIS chunks podem ter o mesmo peso e
+  // o mesmo nome — o painel não impede, e acontece: alguém cria "AAAAAA" duas
+  // vezes para testar e esquece de apagar uma. Sem o desempate por `id`, o
+  // vencedor passa a depender da ORDEM DE LEITURA do Firestore, que não é
+  // garantida. Aí dois jogadores no mesmo mundo veem terrenos diferentes, e o
+  // mundo deixa de ser reproduzível — que é a propriedade que sustenta tudo
+  // aqui.
   const copia = [...lista].sort((a, b) => {
     const peso = (Number(b.peso) || 0) - (Number(a.peso) || 0);
     if (peso !== 0) return peso;
-    return String(a.nome ?? '').localeCompare(String(b.nome ?? ''), 'pt-BR');
+
+    const nome = String(a.nome ?? '').localeCompare(String(b.nome ?? ''), 'pt-BR');
+    if (nome !== 0) return nome;
+
+    // `id` é único e não depende de nada externo. `localeCompare` devolve 0
+    // para nomes iguais, então é aqui que o empate real se resolve.
+    return String(a.id ?? '').localeCompare(String(b.id ?? ''), 'pt-BR');
   });
   return copia[0];
 }
@@ -465,9 +505,9 @@ export function gerarMundoEmChunks(reino, chunks, seedExtra = '') {
   const linhas = Number(reino?.altura) || 44;
   const tamanho = TAMANHO_CHUNK_PADRAO;
 
-  const porCelula = indexarChunks(
-    (chunks ?? []).filter((c) => !c?.mundoId || c.mundoId === reino?.id),
-  );
+  // Mesmo filtro para posicionamento e sorteio. Ver `chunksDoMundo`.
+  const doMundo = chunksDoMundo(chunks, reino?.id);
+  const porCelula = indexarChunks(doMundo);
 
   // O sorteio tira do POOL TODO do mundo, chunks posicionados inclusive.
   //
@@ -477,9 +517,9 @@ export function gerarMundoEmChunks(reino, chunks, seedExtra = '') {
   // chunks que ninguém posicionou — e um chunk de caverna desenhado no canto
   // do mapa nunca apareceria no meio dele.
   //
-  // Para o mesmo chunk serve os dois papéis: rareza e fixidez são coisas
+  // Para o mesmo chunk servem os dois papéis: rareza e fixidez são coisas
   // diferentes, e quem decide é o admin, por chunk.
-  const candidatos = (chunks ?? []).filter((c) => c?.mundoId === reino?.id);
+  const candidatos = doMundo;
 
   const rng = criarRng(`${reino?.seedBase ?? 'reino'}:${seedExtra}:chunks`);
   const celulas = [];
@@ -558,22 +598,40 @@ export function gerarTerrenoMundo(reino, chunks = [], opcoes = {}) {
   const altura = Math.max(1, Number(opcoes.altura) || Number(reino?.altura) || 44);
   const seed = opcoes.seed ?? 'local';
 
-  const doMundo = (chunks ?? []).filter((c) => !c?.mundoId || c.mundoId === reino?.id);
+  // Chunks deste mundo.
+//
+// `!c.mundoId` significa chunk SEM MUNDO: ele serve para qualquer reino. É o
+// que permite ter uma "caverna genérica" cadastrada uma vez e usá-la em todos
+// os mundos, sem duplicar o registro.
+//
+// E o filtro tem que ser o MESMO nos dois lugares. Antes o posicionamento usava
+// este filtro e o sorteio usava `mundoId === reino.id` — o resultado: um chunk
+// sem mundo aparecia onde o admin posicionou e NUNCA mais, em lugar nenhum. Era
+// exatamente o sintoma de "cadastrei e não contou".
+const doMundo = chunksDoMundo(chunks, reino?.id);
   const porCelula = indexarChunks(doMundo);
-  const candidatos = doMundo.filter((c) => c?.mundoId === reino?.id);
+  const candidatos = doMundo;
 
   const celulas = new Map();
 
-  for (let cx = 0; cx < Math.ceil(largura / TAMANHO_CHUNK_PADRAO); cx += 1) {
-    for (let cy = 0; cy < Math.ceil(altura / TAMANHO_CHUNK_PADRAO); cy += 1) {
+  for (let cx = 0; cx * TAMANHO_CHUNK_PADRAO < largura; cx += 1) {
+    for (let cy = 0; cy * TAMANHO_CHUNK_PADRAO < altura; cy += 1) {
       const chunk = porCelula.has(`${cx},${cy}`)
         ? chunkVigente(porCelula, cx, cy)
         : sorteiaChunk(candidatos, criarRng(`${reino?.seedBase ?? 'reino'}:${seed}:${cx},${cy}`));
       if (!chunk) continue;
 
-      const colunas = gerarTerreno(chunk, TAMANHO_CHUNK_PADRAO);
-      const x0 = chunkParaBloco(cx);
-      const y0 = chunkParaBloco(cy);
+      // O terreno usa o tamanho QUE O ADMIN ESCOLHEU, não o padrão da grade.
+      //
+      // A grade do MUNDO é sempre em células de 32 (é a unidade do
+      // `posX`/`posY` que o painel grava), mas um chunk marcado como 8×8 tem
+      // que produzir 8 colunas de terra — não 32. Gerar 32 dentro de uma célula
+      // de 32 é certo por acidente; gerar 32 dentro de uma célula que o painel
+      // desenhou como pequena não é, e o chunk vaza para o vizinho.
+      const lado = tamanhoDoChunk(chunk);
+      const colunas = gerarTerreno(chunk, lado);
+      const x0 = cx * TAMANHO_CHUNK_PADRAO;
+      const y0 = cy * TAMANHO_CHUNK_PADRAO;
 
       for (const col of colunas) {
         const x = x0 + col.x;
