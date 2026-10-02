@@ -6,8 +6,8 @@ Para o registro de código, veja [`CHANGELOG_TECNICO.md`](CHANGELOG_TECNICO.md).
 Este jogo está em desenvolvimento aberto. Se encontrar algo quebrado, o
 caminho mais rápido é relatar com o que você estava fazendo na tela.
 
----
-
+--- 
+ 
 ## Atualização — Refinamento de base, Wiki e Talentos
 
 *Outubro de 2026*
