@@ -131,13 +131,26 @@ service cloud.firestore {
 
     // ---------- Progresso privado do jogador ----------
     match /jogadores/{uid} {
-      // Apenas dono lê/escreve seu progresso
-      allow get, create, update, delete: if isOwner(uid);
+      // O dono controla o próprio progresso. O admin também — é o que permite
+      // a aba "Personagens" mover, duplicar e remover heróis.
+      //
+      // Abertura consciente de superfície: o admin passa a ver inventário,
+      // base e nível de qualquer conta. É necessário para moderar (travar
+      // conta quebrada, corrigir progresso corrompido), e o painel já exibe
+      // dados equivalentes em `users` e `portais`. O risco é de administer
+      // ler dados que o jogador considers privados; se isso incomodar, o
+      // caminho é restringir por campo, o que exige lógica no backend.
+      allow get, create, update, delete: if isOwner(uid) || isAdmin();
+
+      // Listar todos os jogadores é o que alimenta a tabela de personagens.
+      // Sem isto, `repoUsuarios`-style de jogadores/{uid} fica impossível:
+      // o painel não conseguiria nem montar a lista.
+      allow list: if isAdmin();
     }
 
     // Subcoleções do jogador (futuro: inventario, blocos da base, etc.)
     match /jogadores/{uid}/{subcollection}/{docId} {
-      allow read, write: if isOwner(uid);
+      allow read, write: if isOwner(uid) || isAdmin();
     }
 
     match /bases/{uid} {

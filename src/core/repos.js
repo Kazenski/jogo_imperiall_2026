@@ -10,6 +10,7 @@ import {
   query,
   orderBy,
   serverTimestamp,
+  runTransaction,
 } from 'firebase/firestore';
 import { pegarDb, firebaseDisponivel } from './firebase.js';
 
@@ -204,6 +205,184 @@ export const repoBackups = {
   salvar: (id, dados, merge) => salvarDoc('backups', id, dados, merge),
   remover: (id) => removerDoc('backups', id),
 };
+
+// ---------- Progresso dos jogadores (admin) ----------
+
+/**
+ * Lista TODOS os jogadores com seus personagens.
+ *
+ * Lê `users` para o nome legível e `jogadores` para o array `personagens`.
+ * São coleções diferentes: o perfil público fica em `users`, o progresso em
+ * `jogadores`. Um jogador que jogou offline não tem documento em `users`, e
+ * um personagem pode existir sem perfil — daí o `Map` em vez de joins.
+ */
+export async function listarPersonagens() {
+  const db = pegarDb();
+  if (!db) return [];
+
+  const [snapJogadores, snapUsuarios] = await Promise.all([
+    getDocs(collection(db, 'jogadores')),
+    getDocs(collection(db, 'users')),
+  ]);
+
+  const nomes = new Map();
+  for (const d of snapUsuarios.docs) {
+    const dados = d.data();
+    nomes.set(d.id, dados.nome ?? d.id);
+  }
+
+  const linhas = [];
+  for (const docJ of snapJogadores.docs) {
+    const dados = docJ.data() ?? {};
+    const uid = docJ.id;
+    const dono = nomes.get(uid) ?? 'sem perfil';
+    const lista = Array.isArray(dados.personagens) ? dados.personagens : [];
+    for (const p of lista) {
+      linhas.push({
+        uid,
+        dono,
+        personagemId: p?.id ?? null,
+        dados: p ?? {},
+        // Guarda o uid para as escritas: `setDoc` precisa do caminho completo,
+        // e o id do personagem sozinho não identifica o dono.
+        personagemAtivoId: dados.personagemAtivoId ?? null,
+      });
+    }
+  }
+
+  return linhas.sort(
+    (a, b) =>
+      a.dono.localeCompare(b.dono, 'pt-BR') ||
+      String(a.dados.nome ?? '').localeCompare(String(b.dados.nome ?? ''), 'pt-BR'),
+  );
+}
+
+/** Lê o progresso bruto de um jogador (para editar). */
+export async function obterProgresso(uid) {
+  return obterDoc('jogadores', uid);
+}
+
+/**
+ * Grava um personagem de volta na lista do jogador.
+ *
+ * `setDoc` com merge:false porque `personagens` é um ARRAY. Editar um
+ * elemento do array com update exigiria `arrayUnion`, que não substitui —
+ * duplicaria o personagem em vez de atualizar.
+ */
+export async function salvarPersonagem(uid, personagem) {
+  const atual = await obterProgresso(uid);
+  if (!atual) throw new Error('Jogador não encontrado.');
+
+  const lista = Array.isArray(atual.personagens) ? [...atual.personagens] : [];
+  const idx = lista.findIndex((p) => p?.id === personagem.id);
+  if (idx === -1) throw new Error('Personagem não encontrado na conta.');
+
+  lista[idx] = personagem;
+  await setDoc(doc(pegarDb(), 'jogadores', uid), { personagens: lista, atualizadoEm: serverTimestamp() }, { merge: true });
+  return personagem;
+}
+
+/** Duplica um personagem, dando um id novo. */
+export async function duplicarPersonagem(uid, personagem) {
+  const atual = await obterProgresso(uid);
+  if (!atual) throw new Error('Jogador não encontrado.');
+
+  const lista = Array.isArray(atual.personagens) ? [...atual.personagens] : [];
+  const base = lista.find((p) => p?.id === personagem.id);
+  if (!base) throw new Error('Personagem não encontrado.');
+
+  // Id próprio do personagem (o `id` interno dele), não o do documento. O
+  // Firestore aceita qualquer string, então um carimbo temporal basta e evita
+  // colisão mesmo que o jogador duplique o mesmo herói duas vezes seguidas.
+  const copia = {
+    ...structuredClone(base),
+    id: `${base.id}_copia_${Date.now().toString(36)}`,
+    nome: `${base.nome ?? 'Herói'} (cópia)`,
+    // Zera o que não deve ser herdado: um clone com o mesmo XP do original
+    // cria um personagem inflado de graça.
+    xp: 0,
+    nivel: 1,
+    ouro: 0,
+    criadoEm: Date.now(),
+  };
+
+  // Respeita o teto de personagens do jogo (`MAX_PERSONAGENS` em progresso.js).
+  if (lista.length >= 10) {
+    throw new Error('A conta já tem 10 personagens (teto do jogo).');
+  }
+
+  lista.push(copia);
+  await setDoc(doc(pegarDb(), 'jogadores', uid), { personagens: lista, atualizadoEm: serverTimestamp() }, { merge: true });
+  return copia;
+}
+
+/** Remove um personagem da conta. */
+export async function removerPersonagem(uid, personagemId) {
+  const atual = await obterProgresso(uid);
+  if (!atual) throw new Error('Jogador não encontrado.');
+
+  const lista = Array.isArray(atual.personagens) ? atual.personagens : [];
+  const restantes = lista.filter((p) => p?.id !== personagemId);
+  if (restantes.length === lista.length) throw new Error('Personagem não encontrado.');
+
+  const patch = { personagens: restantes, atualizadoEm: serverTimestamp() };
+  // Se o removido era o ativo, aponta para outro — senão o jogo fica sem
+  // personagem jogável e o jogador entra numa tela vazia.
+  if (atual.personagemAtivoId === personagemId) {
+    patch.personagemAtivoId = restantes[0]?.id ?? null;
+  }
+
+  await setDoc(doc(pegarDb(), 'jogadores', uid), patch, { merge: true });
+  return restantes.length;
+}
+
+/**
+ * Move um personagem entre contas (ou entre posições no mundo).
+ *
+ * Usado pelo admin para realocar um herói. Mexe nos DOIS documentos numa
+ * operação só lógica: sem transação, uma falha no meio deixaria o personagem
+ * duplicado em duas contas — o pior tipo de bug num save.
+ */
+export async function moverPersonagem(uidDestino, personagem, uidOrigem) {
+  const origem = uidOrigem ?? uidDestino;
+  const mesmoDono = origem === uidDestino;
+
+  if (mesmoDono) {
+    return salvarPersonagem(uidDestino, personagem);
+  }
+
+  const db = pegarDb();
+  const docOrigem = doc(db, 'jogadores', origem);
+  const docDestino = doc(db, 'jogadores', uidDestino);
+
+  await runTransaction(db, async (tx) => {
+    const snapOrigem = await tx.get(docOrigem);
+    const snapDestino = await tx.get(docDestino);
+    if (!snapOrigem.exists()) throw new Error('Conta de origem não encontrada.');
+
+    const listaOrigem = snapOrigem.data()?.personagens ?? [];
+    const restantes = listaOrigem.filter((p) => p?.id !== personagem.id);
+    if (restantes.length === listaOrigem.length) throw new Error('Personagem não está na conta de origem.');
+
+    const listaDestino = snapDestino.exists()
+      ? (snapDestino.data()?.personagens ?? [])
+      : [];
+    if (listaDestino.length >= 10) throw new Error('A conta de destino já tem 10 personagens.');
+
+    tx.update(docOrigem, {
+      personagens: restantes,
+      personagemAtivoId: snapOrigem.data()?.personagemAtivoId === personagem.id
+        ? restantes[0]?.id ?? null
+        : snapOrigem.data()?.personagemAtivoId,
+    });
+    tx.set(docDestino, {
+      personagens: [...listaDestino, personagem],
+      atualizadoEm: serverTimestamp(),
+    }, { merge: true });
+  });
+
+  return personagem;
+}
 
 /** Uids marcados como administrador (system/admins). */
 export async function listarAdmins() {

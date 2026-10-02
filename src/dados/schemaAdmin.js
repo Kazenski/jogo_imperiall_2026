@@ -250,7 +250,8 @@ export const EFEITOS_DESCRICOES = {
 export const CAMPOS_ITEM = [
   { chave: 'nome', rotulo: 'Nome', tipo: 'texto', obrigatorio: true, placeholder: 'Ex.: Machado de Ferro' },
   { chave: 'descricao', rotulo: 'Descrição (aparece na wiki e na ficha)', tipo: 'area', placeholder: 'Explique o que é, para que serve e de onde vem.' },
-  { chave: 'imagem', rotulo: 'Imagem', tipo: 'imagem', pastaUpload: 'itens' },
+  { chave: 'imagem', rotulo: 'Imagem', tipo: 'imagem', pastaUpload: 'itens', pixelArt: true,
+    dica: 'Envie um arquivo pronto ou desenhe aqui. O editor é 32×32, do tamanho exato de um bloco do mundo.' },
   { chave: 'tipo', rotulo: 'Tipo', tipo: 'select', opcoes: comRotulo(TIPOS_ITEM) },
   { chave: 'uso', rotulo: 'Usos', tipo: 'multiselec', opcoes: comRotulo(USOS_ITEM),
     dica: 'Extração = veio do mundo · Transformação = insumo de receita · Utilização = uso direto · Estrutura = construção · Equipável · Máquina' },
@@ -313,7 +314,8 @@ export const CAMPOS_ITEM = [
 export const CAMPOS_CLASSE = [
   { chave: 'nome', rotulo: 'Nome da Vocação', tipo: 'texto', obrigatorio: true },
   { chave: 'descricao', rotulo: 'Descrição', tipo: 'area', placeholder: 'Explique o papel da vocação no Império.' },
-  { chave: 'imagem', rotulo: 'Imagem / retrato', tipo: 'imagem', pastaUpload: 'classes' },
+  { chave: 'imagem', rotulo: 'Imagem / retrato', tipo: 'imagem', pastaUpload: 'classes', pixelArt: true,
+    dica: 'Envie um arquivo pronto ou desenhe aqui. O editor é 32×32, do tamanho exato de um bloco do mundo.' },
   { chave: 'cor', rotulo: 'Cor', tipo: 'cor' },
   { chave: 'nivelMin', rotulo: 'Nível mínimo', tipo: 'numero' },
   { chave: 'vidaBase', rotulo: 'Vida base', tipo: 'numero' },
@@ -333,7 +335,8 @@ export const CAMPOS_CLASSE = [
 export const CAMPOS_MONSTRO = [
   { chave: 'nome', rotulo: 'Nome', tipo: 'texto', obrigatorio: true },
   { chave: 'descricao', rotulo: 'Descrição', tipo: 'area', placeholder: 'O que é essa criatura no Império?' },
-  { chave: 'imagem', rotulo: 'Imagem', tipo: 'imagem', pastaUpload: 'monstros' },
+  { chave: 'imagem', rotulo: 'Imagem', tipo: 'imagem', pastaUpload: 'monstros', pixelArt: true,
+    dica: 'Envie um arquivo pronto ou desenhe aqui. O editor é 32×32, do tamanho exato de um bloco do mundo.' },
   { chave: 'tipo', rotulo: 'Tipo', tipo: 'texto', placeholder: 'Ex.: bestial, espectro, constructo' },
   { chave: 'raridade', rotulo: 'Raridade', tipo: 'texto' },
   { chave: 'faixaMin', rotulo: 'Nível mínimo', tipo: 'numero' },
@@ -543,7 +546,8 @@ export const CAMPOS_NPC = [
   { chave: 'nome', rotulo: 'Nome do NPC', tipo: 'texto', obrigatorio: true },
   { chave: 'descricao', rotulo: 'Descrição', tipo: 'area',
     dica: 'O que este NPC é no Império. O jogador lê isto ao interagir.' },
-  { chave: 'imagem', rotulo: 'Retrato', tipo: 'imagem', pastaUpload: 'npcs' },
+  { chave: 'imagem', rotulo: 'Retrato', tipo: 'imagem', pastaUpload: 'npcs', pixelArt: true,
+    dica: 'Envie um arquivo pronto ou desenhe aqui. O editor é 32×32, do tamanho exato de um bloco do mundo.' },
   { chave: 'cor', rotulo: 'Cor', tipo: 'cor' },
 
   // ---- Onde ele vive ----

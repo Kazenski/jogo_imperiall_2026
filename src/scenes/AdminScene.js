@@ -16,9 +16,17 @@ import {
   repoBackups,
   listarAdmins,
   definirAdminUid,
+  listarPersonagens,
+  obterProgresso,
+  salvarPersonagem,
+  duplicarPersonagem,
+  removerPersonagem,
+  moverPersonagem,
 } from '../core/repos.js';
 import { ehAdmin } from '../core/usuarios.js';
 import { enviarImagem, pareceUrlDeImagem } from '../core/armazenamento.js';
+import { abrirModal } from '../ui/modal.js';
+import { criarEditorPixelArt, TAMANHO_PIXEL_ART } from '../ui/pixelart.js';
 import {
   CAMPOS_ITEM,
   CAMPOS_CLASSE,
@@ -59,6 +67,7 @@ const ABAS = [
   { id: 'conquistas', label: 'Conquistas', icone: '🏆', repo: repoAchievements, cache: 'conquistas', campos: CAMPOS_CONQUISTA, resumo: RESUMO.conquistas },
   { id: 'portais', label: 'Portais', icone: '🌀', especial: 'portais' },
   { id: 'jogadores', label: 'Jogadores', icone: '👥', especial: 'jogadores' },
+  { id: 'personagens', label: 'Personagens', icone: '🗡️', especial: 'personagens' },
   { id: 'estacoes', label: 'Estações', icone: '🏭', repo: repoEstacoes, cache: 'estacoes', campos: CAMPOS_ESTACAO, resumo: RESUMO.estacoes, pastaUpload: 'estacoes' },
   { id: 'biomas', label: 'Biomas', icone: '🌿', repo: repoBiomas, cache: 'biomas', campos: CAMPOS_BIOMA, resumo: RESUMO.biomas, pastaUpload: 'biomas' },
   { id: 'npcs', label: 'NPCs do Mundo', icone: '👤', repo: repoNPCs, cache: 'npcs', campos: CAMPOS_NPC, resumo: RESUMO.npcs, pastaUpload: 'npcs' },
@@ -214,6 +223,20 @@ function escaparHtml(s) {
 }
 
 const escaparAttr = escaparHtml;
+
+// Globais de navegador que o verificador de referências do painel de testes
+// não conhece. `atob` converte base64 do data URL de volta em bytes.
+const atob = (b64) => globalThis.atob(b64);
+
+/** Converte um data URL de imagem em File, para passar por `enviarImagem`. */
+function dataUrlParaArquivo(dataUrl, nome = 'pixelart.png') {
+  const [cabecalho, corpo] = String(dataUrl).split(',');
+  const tipo = /data:([^;]+)/.exec(cabecalho)?.[1] ?? 'image/png';
+  const binario = atob(corpo);
+  const bytes = new Uint8Array(binario.length);
+  for (let i = 0; i < binario.length; i += 1) bytes[i] = binario.charCodeAt(i);
+  return new File([bytes], nome, { type: tipo });
+}
 
 export class AdminScene extends Phaser.Scene {
   constructor() {
@@ -379,6 +402,7 @@ export class AdminScene extends Phaser.Scene {
 
     if (aba.especial === 'portais') return this.renderizarPortais(conteudo);
     if (aba.especial === 'jogadores') return this.renderizarJogadores(conteudo);
+    if (aba.especial === 'personagens') return this.renderizarPersonagens(conteudo);
     if (aba.especial === 'estatisticas') return this.renderizarEstatisticas(conteudo);
     if (aba.especial === 'balanceamento') return this.renderizarBalanceamento(conteudo);
     if (aba.especial === 'monetario') return this.renderizarMonetario(conteudo);
@@ -530,6 +554,15 @@ export class AdminScene extends Phaser.Scene {
       const comMapa = aba.id === 'npcs';
       if (comMapa) {
         conteudo.querySelector('.grid-catalogo').style.gridTemplateColumns = '260px minmax(0,1fr) 300px';
+        // A grade lateral é um resumo: ela cabe em 220px de largura mas corta
+        // o mapa. O botão abre a versão inteira, que é onde se posiciona de
+        // verdade. A lateral serve para conferir sem trocar de tela.
+        const btnAbrir = document.createElement('button');
+        btnAbrir.className = 'btn-primario';
+        btnAbrir.style.cssText = 'width:100%;margin-top:10px;padding:9px';
+        btnAbrir.textContent = '🗺 Abrir mapa inteiro';
+        btnAbrir.addEventListener('click', () => this.abrirMapaNpcEmModal(aba, this.selecionado.item, ctx));
+        this._botaoAbrirMapa = btnAbrir;
       }
       this.desenharFormularioDom(formEl, aba, this.selecionado.item, classesOpcoes, ctx);
       this.desenharPreviewDom(previewEl, aba, this.selecionado.item);
@@ -538,8 +571,9 @@ export class AdminScene extends Phaser.Scene {
         painelMapa.className = 'painel';
         painelMapa.id = 'adminMapaNpc';
         conteudo.querySelector('.grid-catalogo').insertBefore(painelMapa, previewEl);
-        this.desenharMapaNpc(painelMapa, aba, this.selecionado.item, ctx);
+        this.desenharMapaMapaComBotao(painelMapa, aba, this.selecionado.item, ctx);
       }
+
     } else {
       formEl.innerHTML = '<h3>Formulário</h3><p style="color:#7b8794;font-size:13px">Escolha um registro na lista ou clique em <b>+ Novo registro</b>.</p>';
       previewEl.innerHTML = '<h3>Prévia</h3><p style="color:#7b8794;font-size:13px">A ficha do registro aparece aqui.</p>';
@@ -556,36 +590,62 @@ export class AdminScene extends Phaser.Scene {
    * Clicar numa célula escreve direto em posX/posY e reflete no formulário —
    * os dois caminhos editao o mesmo objeto, então não há como divergirem.
    */
-  desenharMapaNpc(el, aba, item, ctx) {
-    const mundo = ctx.reinos.find((r) => r.id === item?.mundoId);
-    const TAMANHO_PADRAO = 32;
-    let lado = TAMANHO_PADRAO;
-    if (mundo?.largura) lado = Math.max(8, Math.min(128, Number(mundo.largura) || TAMANHO_PADRAO));
+  /**
+   * Lado da grade, em blocos, derivado do mundo escolhido.
+   *
+   * O mapa do painel é um quadradinho por bloco do jogo. Um mundo de 256
+   * blocos daria 256 quadradinhos — impossível ver. Por isso o lado é
+   * limitado, e o admin posiciona por coordenada mesmo em mundos grandes.
+   */
+  ladoDaGrade(mundo) {
+    const PADRAO = 32;
+    let lado = PADRAO;
+    if (mundo?.largura) lado = Number(mundo.largura) || PADRAO;
     else if (mundo?.tamanho) {
-      lado = { pequeno: 32, medio: 64, grande: 128, enorme: 256 }[mundo.tamanho] ?? TAMANHO_PADRAO;
-      lado = Math.min(lado, 96); // acima disso a grade fica inutilizável na tela
+      lado = { pequeno: 32, medio: 64, grande: 128, enorme: 256 }[mundo.tamanho] ?? PADRAO;
     }
-    lado = Math.round(lado);
+    return Math.max(8, Math.min(96, Math.round(lado)));
+  }
+
+  /**
+   * Desenha a grade quadriculada num elemento.
+   *
+   * Compartilhado entre o painel lateral e o modal: os dois precisam da MESMA
+   * grade, senão o admin posiciona no modal e o painel mostra outra coisa.
+   *
+   * @param {HTMLElement} el       onde desenhar
+   * @param {object} item          NPC em edição
+   * @param {object} ctx           contexto com reinos e npcs
+   * @param {(x:number,y:number)=>void} aoEscolher
+   * @param {number} tamanhoCelula pixels por quadradinho na tela
+   * @param {boolean} compacto     true omite o texto de ajuda
+   */
+  montarGradeNpc(el, item, ctx, aoEscolher, tamanhoCelula = 22, compacto = false) {
+    const mundo = ctx.reinos.find((r) => r.id === item?.mundoId);
+    const lado = this.ladoDaGrade(mundo);
+
+    el.innerHTML = `
+      <h3>Posição no mapa</h3>
+      <p style="font-size:11px;color:#7b8794;margin-bottom:8px">
+        ${mundo
+          ? `Mundo: <b>${escaparHtml(mundo.nome)}</b> · grade ${lado}×${lado} blocos`
+          : 'Selecione um mundo no formulário para ver a grade dele'}
+      </p>
+      <div class="mapa-npc"></div>
+      <div class="legenda-mapa">
+        <span>🟨 quadrado com NPC</span>
+        <span>🟥 ponto fixo selecionado</span>
+        <span>clique para posicionar</span>
+      </div>`;
+
+    const grade = el.querySelector('.mapa-npc');
+    grade.style.gridTemplateColumns = `repeat(${lado}, ${tamanhoCelula}px)`;
 
     const npcsDoMundo = ctx.npcs.filter(
       (n) => n.id !== item?.id && (!item?.mundoId || n.mundoId === item.mundoId),
     );
 
-    el.innerHTML = `
-      <h3>Posição no mapa</h3>
-      <p style="font-size:11px;color:#7b8794;margin-bottom:8px">
-        ${mundo ? `Mundo: <b>${mundo.nome}</b> · grade ${lado}×${lado}` : 'Selecione um mundo para ver a grade dele'}
-      </p>
-      <div class="mapa-npc" id="gradeNpc"></div>
-      <div class="legenda-mapa">
-        <span>🟨 quadrado com NPC</span><span>🟥 ponto fixo selecionado</span>
-        <span>clique para posicionar</span>
-      </div>`;
-
-    const grade = el.querySelector('#gradeNpc');
-    grade.style.gridTemplateColumns = `repeat(${lado}, 22px)`;
-
-    // Índice de NPCs por célula para não repetir a busca a cada clique.
+    // Índice por célula: sem ele, cada clique varreria a lista inteira.
     const porCelula = new Map();
     for (const n of npcsDoMundo) {
       const x = Number(n.posX);
@@ -601,6 +661,10 @@ export class AdminScene extends Phaser.Scene {
       for (let x = 0; x < lado; x += 1) {
         const celula = document.createElement('div');
         celula.className = 'celula';
+        celula.style.width = `${tamanhoCelula}px`;
+        celula.style.height = `${tamanhoCelula}px`;
+        celula.style.fontSize = `${Math.max(9, tamanhoCelula - 12)}px`;
+
         const qtd = porCelula.get(`${x},${y}`) ?? 0;
         if (qtd) {
           celula.classList.add('com-npc');
@@ -608,24 +672,154 @@ export class AdminScene extends Phaser.Scene {
           celula.title = `${qtd} NPC(s) aqui`;
         }
         if (x === alvo.x && y === alvo.y) celula.classList.add('alvo');
+
         celula.addEventListener('click', () => {
           alvo.x = x;
           alvo.y = y;
           grade.querySelectorAll('.celula.alvo').forEach((c) => c.classList.remove('alvo'));
           celula.classList.add('alvo');
-          // Reflete nos inputs do formulário, se já desenhados.
-          for (const chave of ['posX', 'posY']) {
-            const input = el.parentElement?.querySelector?.(`input[data-campo="${chave}"]`);
-            if (input) input.value = String(chave === 'posX' ? x : y);
-          }
-          this._refsForm.posX.obter = () => String(alvo.x);
-          this._refsForm.posY.obter = () => String(alvo.y);
-          this.status(`Posição: ${x}, ${y}`);
-          this.atualizarPreviewDom(aba);
+          if (!compacto) this.status(`Posição: ${x}, ${y}`);
+          aoEscolher(x, y);
         });
         grade.appendChild(celula);
       }
     }
+
+    return { lado, alvo };
+  }
+
+  /**
+   * Editor de pixel art em modal.
+   *
+   * Devolve a arte como data URL para a prévia, e opcionalmente envia para o
+   * Storage no "Salvar" — não aqui. Enviar no botão faria upload a cada
+   * traço, e o Storage cobraria por isso.
+   */
+  abrirEditorPixelArt(aba, campo, ref) {
+    const escuro = this.overlay?.classList.contains('escuro') ?? false;
+    let editor = null;
+    let dataUrlAtual = ref.arte ?? '';
+
+    // O editor desenha direto no canvas da prévia, que fica no formulário.
+    // `paints` é opcional porque quem chama pode ser o campo `imagem`
+    // (com canvas próprio) ou um `pixelart` avulso.
+    const paints = ref.paints ?? (() => {});
+
+    abrirModal({
+      titulo: `Pixel art — ${campo.rotulo} (${TAMANHO_PIXEL_ART}×${TAMANHO_PIXEL_ART})`,
+      escuro,
+      largura: 'min(96vw, 760px)',
+      desenhar: (corpo) => {
+        editor = criarEditorPixelArt({
+          valor: ref.arte,
+          aoMudar: (d) => {
+            dataUrlAtual = d;
+            paints(d);
+          },
+        });
+        corpo.appendChild(editor.elemento);
+      },
+      botoes: [
+        {
+          texto: 'Cancelar',
+          aoClicar: () => {
+            // Descarta o que foi desenhado: a prévia volta ao que estava
+            // gravado. Sem isto, cancelar deixaria a arte órfã no formulário.
+            paints(ref.arte);
+            dataUrlAtual = ref.arte ?? '';
+          },
+        },
+        {
+          texto: 'Usar esta arte',
+          classe: 'primario',
+          aoClicar: () => {
+            ref.arte = dataUrlAtual;
+            ref.valorAtual = dataUrlAtual;
+            const inputUrl = this.overlay?.querySelector?.(`input[data-campo="${campo.chave}"]`);
+            if (inputUrl && dataUrlAtual.startsWith('data:')) inputUrl.value = '';
+            paints(dataUrlAtual);
+            this.atualizarPreviewDom(aba);
+          },
+        },
+      ],
+    });
+  }
+
+  /**
+   * Painel lateral do mapa: a grade resumida mais o botão que abre o modal.
+   */
+  desenharMapaMapaComBotao(el, aba, item, ctx) {
+    this.montarGradeNpc(el, item, ctx, (x, y) => {
+      for (const chave of ['posX', 'posY']) {
+        const input = el.parentElement?.querySelector?.(`input[data-campo="${chave}"]`);
+        if (input) input.value = String(chave === 'posX' ? x : y);
+        const ref = this._refsForm?.[chave];
+        if (ref) ref.obter = () => String(chave === 'posX' ? x : y);
+      }
+      this.atualizarPreviewDom(aba);
+    }, 18, true);
+
+    const btn = this._botaoAbrirMapa;
+    if (btn) el.appendChild(btn);
+  }
+
+  /**
+   * Mapa do NPC em modal, em tamanho que cabe na tela.
+   *
+   * O painel lateral limita a grade a 96 por lado, o que já corta um mundo
+   * médio. No modal o limite sobe: aproveitamos a altura da janela, com
+   * quadradinho de 26px, e o scroll cobre o excedente.
+   */
+  abrirMapaNpcEmModal(aba, item, ctx) {
+    const escuro = this.overlay?.classList.contains('escuro') ?? false;
+
+    abrirModal({
+      titulo: `Mapa — ${item?.nome ?? 'NPC sem nome'}`,
+      escuro,
+      largura: 'min(94vw, 980px)',
+      desenhar: (corpo, api) => {
+        corpo.style.cssText = 'display:flex;flex-direction:column;gap:12px';
+
+        // Quadradinho maior que o do painel: é a diferença entre "conferir" e
+        // "mirar a célula certa" num mundo de 64 blocos.
+        const area = document.createElement('div');
+        area.id = 'mapaNpcModal';
+        corpo.appendChild(area);
+
+        const aplicar = (x, y) => {
+          for (const chave of ['posX', 'posY']) {
+            const valor = String(chave === 'posX' ? x : y);
+            const input = this.overlay?.querySelector?.(`input[data-campo="${chave}"]`);
+            if (input) input.value = valor;
+            const ref = this._refsForm?.[chave];
+            if (ref) ref.obter = () => valor;
+          }
+          this.status(`Posição: ${x}, ${y}`);
+          this.atualizarPreviewDom(aba);
+        };
+
+        this.montarGradeNpc(area, item, ctx, aplicar, 26, true);
+
+        const dica = document.createElement('p');
+        dica.style.cssText = 'margin:0;font-size:11px;color:#7b8794';
+        dica.textContent =
+          'O ponto é gravado no formulário ao clicar. Feche o mapa e salve o NPC para gravar no Firestore.';
+        corpo.appendChild(dica);
+      },
+      botoes: [{ texto: 'Fechar', classe: 'primario' }],
+    });
+  }
+
+  desenharMapaNpc(el, aba, item, ctx) {
+    this.montarGradeNpc(el, item, ctx, (x, y) => {
+      for (const chave of ['posX', 'posY']) {
+        const input = el.parentElement?.querySelector?.(`input[data-campo="${chave}"]`);
+        if (input) input.value = String(chave === 'posX' ? x : y);
+        const ref = this._refsForm?.[chave];
+        if (ref) ref.obter = () => String(chave === 'posX' ? x : y);
+      }
+      this.atualizarPreviewDom(aba);
+    }, 22, true);
   }
 
   // ---------- editores estruturados ----------
@@ -971,10 +1165,19 @@ export class AdminScene extends Phaser.Scene {
         }
       } else if (campo.tipo === 'imagem') {
         controle = document.createElement('div');
+        // O check de envio ao Storage também aparece no caminho do upload por
+        // arquivo: os dois produzem a mesma arte, e o admin não deve se
+        // perguntar por que um salva no bucket e o outro embute no Firestore.
+        const precisaEnviar = campo.pixelArt
+          ? `<label style="display:flex;align-items:center;gap:5px;margin-top:6px;font-size:11px;color:#5a6a78;cursor:pointer">
+               <input type="checkbox" id="pxEnviar_${campo.chave}" checked>
+               <span>Enviar para o Storage</span>
+             </label>`
+          : '';
         controle.innerHTML = `
           <input type="file" accept="image/*" style="margin-bottom:6px">
-          <input type="text" placeholder="ou cole a URL da imagem" value="${valor ?? ''}">`;
-        const [fileEl, urlEl] = controle.querySelectorAll('input');
+          <input type="text" placeholder="ou cole a URL da imagem" value="${escaparAttr(valor ?? '')}">
+          ${precisaEnviar}`;
         fileEl.addEventListener('change', async () => {
           const arq = fileEl.files?.[0];
           if (!arq) return;
@@ -998,7 +1201,55 @@ export class AdminScene extends Phaser.Scene {
           }
           this.atualizarPreviewDom(aba);
         });
-        refs[campo.chave] = { campo, obter: () => refs[campo.chave].valorAtual ?? urlEl.value.trim(), valorAtual: valor ?? '' };
+        const refImagem = {
+          campo,
+          arte: valor ?? '',
+          obter: () => refImagem.valorAtual ?? urlEl.value.trim(),
+          valorAtual: valor ?? '',
+        };
+        refs[campo.chave] = refImagem;
+
+        // `pixelArt: true` no schema liga o editor de desenho ao lado do
+        // upload. Não é um tipo novo: é o MESMO campo `imagem` com um botão
+        // a mais, então quem já tem arte salva continua funcionando igual.
+        if (campo.pixelArt) {
+          refImagem.checkEnviar = controle.querySelector(`#pxEnviar_${campo.chave}`);
+
+          // Miniatura ao lado do botão, para o admin ver o que está desenhado
+          // sem abrir o modal.
+          const thumb = document.createElement('canvas');
+          thumb.width = TAMANHO_PIXEL_ART;
+          thumb.height = TAMANHO_PIXEL_ART;
+          thumb.style.cssText = 'image-rendering:pixelated;width:44px;height:44px;border:1px solid #ccd5de;border-radius:5px;background:#f2f5f8;margin-top:6px;vertical-align:top';
+          controle.appendChild(thumb);
+
+          refImagem.paints = (dataUrl) => {
+            const ctx = thumb.getContext('2d');
+            ctx.clearRect(0, 0, TAMANHO_PIXEL_ART, TAMANHO_PIXEL_ART);
+            if (!dataUrl) return;
+            const img = new Image();
+            img.onload = () => {
+              ctx.imageSmoothingEnabled = false;
+              ctx.drawImage(img, 0, 0);
+            };
+            img.src = dataUrl;
+          };
+          refImagem.paints(valor ?? '');
+
+          const btnPixel = document.createElement('button');
+          btnPixel.type = 'button';
+          btnPixel.className = 'btn-secundario';
+          btnPixel.style.cssText = 'padding:7px 12px;font-size:12px;margin-top:6px';
+          btnPixel.textContent = '🎨 Criar / editar pixel art';
+          btnPixel.addEventListener('click', () => this.abrirEditorPixelArt(aba, campo, refImagem));
+          controle.appendChild(btnPixel);
+
+          const info = document.createElement('div');
+          info.style.cssText = 'font-size:10px;color:#93a1ad;margin-top:4px';
+          info.textContent = `${TAMANHO_PIXEL_ART}×${TAMANHO_PIXEL_ART} px, quadrado — 1 quadradinho = 1 bloco do mundo`;
+          controle.appendChild(info);
+        }
+
         label.appendChild(controle);
         if (campo.dica) label.insertAdjacentHTML('beforeend', `<div class="dica">${campo.dica}</div>`);
         form.appendChild(label);
@@ -1112,10 +1363,29 @@ export class AdminScene extends Phaser.Scene {
     };
     const objeto = limparVazios(dados);
 
+    // Pixel art: converte o data URL em URL do Storage ANTES de gravar, para
+    // que o documento já nasça com o campo `imagem` definitivo. Um data URL
+    // funciona, mas pesa e cada jogador baixa a arte inteira em memória.
+    const refPixel = this._refsForm?.imagem;
+    if (refPixel?.arte?.startsWith?.('data:image') && refPixel.checkEnviar?.checked) {
+      try {
+        this.status('Enviando pixel art…');
+        const blob = dataUrlParaArquivo(refPixel.arte, 'pixelart.png');
+        const url = await enviarImagem(blob, aba.id ?? 'imagens', { ladoMaximo: TAMANHO_PIXEL_ART });
+        objeto.imagem = url;
+        refPixel.arte = url;
+        refPixel.valorAtual = url;
+        this.status('Pixel art enviada.');
+      } catch (erro) {
+        // Segue salvando com o data URL: perder a arte que o admin acabou de
+        // desenhar por causa de uma falha de rede é pior que uma imagem
+        // pesada demais.
+        this.status('Upload falhou, salvando arte embutida: ' + (erro?.message ?? erro), '#c96a5a');
+      }
+    }
+
     try {
       if (item) {
-        // `merge: false` aqui é intencional? NÃO — merge:true preserva campos
-        // que o painel ainda não conhece. Usamos merge (padrão do repo).
         await aba.repo.salvar(item.id, objeto);
         this.status('Salvo.');
       } else {
@@ -1270,6 +1540,292 @@ export class AdminScene extends Phaser.Scene {
   }
 
   // ---------- novas abas especiais ----------
+
+  /**
+   * CRUD de personagens: mover, duplicar e remover heróis.
+   *
+   * Lê `jogadores/{uid}` — coleção que até ontem só o dono podia ler. As
+   * regras agora abrem para admin (ver firestore.rules); sem isso esta aba
+   * inteiro não teria o que mostrar.
+   */
+  async renderizarPersonagens(conteudo) {
+    conteudo.innerHTML = '<div class="painel">Carregando…</div>';
+    const [personagens, usuarios, classes, mundos] = await Promise.all([
+      this.carregar('personagens', () => listarPersonagens()),
+      this.carregar('usuarios', () => repoUsuarios.listar()),
+      this.carregar('classes', () => repoClasses.listar()),
+      this.carregar('reinos', () => repoWorldTemplates.listar()),
+    ]);
+    if (!this.overlay) return;
+
+    const termo = (this.busca ?? '').trim().toLowerCase();
+    const lista = termo
+      ? personagens.filter((p) =>
+          [p.dono, p.dados?.nome, p.uid, p.dados?.vocacaoId].some((v) =>
+            String(v ?? '').toLowerCase().includes(termo),
+          ),
+        )
+      : personagens;
+
+    const nomeClasse = (id) => classes.find((c) => c.id === id)?.nome ?? id ?? 'sem classe';
+    const contaDe = (uid) => usuarios.find((u) => u.id === uid);
+
+    conteudo.innerHTML = `
+      <div class="painel">
+        <h3>Personagens</h3>
+        <p style="font-size:12px;color:#7b8794">
+          ${personagens.length} personagem(ns) em ${new Set(personagens.map((p) => p.uid)).size} conta(s).
+          Mover, duplicar e remover são ações permanentes — confirme cada uma.
+        </p>
+        <div class="busca"><input id="buscaPersonagens" type="text" placeholder="Buscar por nome, dono, vocação…"></div>
+        <div style="overflow:auto;max-height:70vh">
+        <table id="tabelaPersonagens">
+          <thead><tr>
+            <th>Personagem</th><th>Conta</th><th>Vocação</th><th>Nível</th><th>Ouro</th>
+            <th>Posição</th><th></th>
+          </tr></thead>
+          <tbody>
+            ${lista.map((p) => {
+              const d = p.dados ?? {};
+              const pos = d.posicao ?? {};
+              return `<tr data-uid="${escaparAttr(p.uid)}" data-pid="${escaparAttr(String(p.personagemId ?? ''))}">
+                <td><b>${escaparHtml(d.nome ?? '—')}</b>${p.personagemAtivoId === p.personagemId ? ' <span style="font-size:10px;color:#2bb3a3">ativo</span>' : ''}</td>
+                <td>${escaparHtml(p.dono)}</td>
+                <td>${escaparHtml(nomeClasse(d.vocacaoId))}</td>
+                <td>${d.nivel ?? 1}</td>
+                <td>${d.ouro ?? 0}</td>
+                <td>${pos.x ?? 0}, ${pos.y ?? 0}</td>
+                <td style="white-space:nowrap">
+                  <button class="btn-secundario" data-acao="editar" style="padding:5px 9px;font-size:11px">Editar</button>
+                  <button class="btn-secundario" data-acao="mover" style="padding:5px 9px;font-size:11px">Mover</button>
+                  <button class="btn-secundario" data-acao="duplicar" style="padding:5px 9px;font-size:11px">Duplicar</button>
+                  <button class="btn-perigo" data-acao="remover" style="padding:5px 9px;font-size:11px">✕</button>
+                </td>
+              </tr>`;
+            }).join('') || '<tr><td colspan="7">Nenhum personagem encontrado.</td></tr>'}
+          </tbody>
+        </table></div>
+      </div>`;
+
+    const busca = conteudo.querySelector('#buscaPersonagens');
+    if (busca) {
+      busca.value = this.busca ?? '';
+      busca.addEventListener('input', () => {
+        this.busca = busca.value;
+        clearTimeout(this._tBuscaPersonagens);
+        this._tBuscaPersonagens = setTimeout(() => this.renderizarPersonagens(conteudo), 200);
+      });
+    }
+
+    conteudo.querySelectorAll('#tabelaPersonagens tbody tr').forEach((tr) => {
+      const uid = tr.dataset.uid;
+      const pid = tr.dataset.pid;
+      if (!uid || !pid) return;
+      const linha = personagens.find((p) => p.uid === uid && String(p.personagemId) === pid);
+      if (!linha) return;
+
+      const acts = (acao, fn) => tr.querySelector(`button[data-acao="${acao}"]`)
+        ?.addEventListener('click', fn);
+
+      acts('editar', () => this.abrirEditorPersonagem(linha, contaDe(uid)));
+      acts('mover', () => this.abrirMoverPersonagem(linha, personagens, contaDe));
+      acts('duplicar', async () => {
+        if (!window.confirm(`Duplicar "${linha.dados.nome}"?\n\nA cópia começa no nível 1, sem XP e sem ouro.`)) return;
+        try {
+          const copia = await duplicarPersonagem(uid, linha.dados);
+          delete this.caches.personagens;
+          this.status(`Cópia criada: ${copia.nome}`);
+          this.renderizarPersonagens(conteudo);
+        } catch (erro) {
+          this.status('Erro ao duplicar: ' + (erro?.message ?? erro), '#c96a5a');
+        }
+      });
+      acts('remover', async () => {
+        const nome = linha.dados.nome ?? '—';
+        if (!window.confirm(`Remover "${nome}" de ${linha.dono}?\n\nEsta ação não pode ser desfeita.`)) return;
+        try {
+          await removerPersonagem(uid, pid);
+          delete this.caches.personagens;
+          this.status('Personagem removido.');
+          this.renderizarPersonagens(conteudo);
+        } catch (erro) {
+          this.status('Erro ao remover: ' + (erro?.message ?? erro), '#c96a5a');
+        }
+      });
+    });
+  }
+
+  /** Editor rápido de um personagem: nível, ouro, posição, vocação. */
+  abrirEditorPersonagem(linha, conta) {
+    const escuro = this.overlay?.classList.contains('escuro') ?? false;
+    const d = structuredClone(linha.dados ?? {});
+
+    abrirModal({
+      titulo: `Editar — ${d.nome ?? 'Personagem'}`,
+      escuro,
+      largura: 'min(94vw, 520px)',
+      desenhar: (corpo) => {
+        corpo.innerHTML = `
+          <p style="font-size:12px;color:#7b8794;margin:0 0 12px">
+            Conta: <b>${escaparHtml(linha.dono)}</b>${conta?.email ? ` (${escaparHtml(conta.email)})` : ''}<br>
+            id interno: <code>${escaparHtml(linha.personagemId)}</code>
+          </p>
+          <div id="camposPersonagem" style="display:flex;flex-direction:column;gap:10px"></div>`;
+
+        const area = corpo.querySelector('#camposPersonagem');
+        const campos = [
+          { chave: 'nome', rotulo: 'Nome', tipo: 'texto' },
+          { chave: 'nivel', rotulo: 'Nível', tipo: 'numero', min: 1 },
+          { chave: 'xp', rotulo: 'XP', tipo: 'numero', min: 0 },
+          { chave: 'ouro', rotulo: 'Ouro', tipo: 'numero', min: 0 },
+          { chave: 'posX', rotulo: 'Posição X', tipo: 'numero', get: () => d.posicao?.x ?? 0, set: (v) => { d.posicao = { ...(d.posicao ?? {}), x: v }; } },
+          { chave: 'posY', rotulo: 'Posição Y', tipo: 'numero', get: () => d.posicao?.y ?? 0, set: (v) => { d.posicao = { ...(d.posicao ?? {}), y: v }; } },
+        ];
+
+        for (const c of campos) {
+          const label = document.createElement('label');
+          label.style.cssText = 'display:flex;flex-direction:column;gap:4px;font-size:12px;color:#5a6a78';
+          const input = document.createElement('input');
+          input.type = c.tipo === 'numero' ? 'number' : 'text';
+          if (c.min !== undefined) input.min = String(c.min);
+          input.value = String(c.get ? c.get() : d[c.chave] ?? '');
+          input.addEventListener('input', () => {
+            const v = c.tipo === 'numero' ? Number(input.value) || 0 : input.value;
+            if (c.set) c.set(v);
+            else d[c.chave] = v;
+          });
+          label.append(input, Object.assign(document.createElement('span'), {
+            textContent: c.rotulo,
+            style: 'font-size:11px;font-weight:600',
+          }));
+          area.appendChild(label);
+        }
+
+        // Vocação é select: os ids são do catálogo de classes, e escrever um
+        // id inválido deixaria o personagem sem_icon no lobby.
+        const areaClasses = document.createElement('div');
+        areaClasses.style.cssText = 'display:flex;flex-direction:column;gap:4px;font-size:12px;color:#5a6a78';
+        const selClasses = document.createElement('select');
+        this.carregar('classes', () => repoClasses.listar()).then((lista) => {
+          selClasses.innerHTML = `<option value="">sem classe</option>${
+            lista.map((c) => `<option value="${escaparAttr(c.id)}" ${c.id === d.vocacaoId ? 'selected' : ''}>${escaparHtml(c.nome ?? c.id)}</option>`).join('')
+          }`;
+        });
+        selClasses.addEventListener('change', () => { d.vocacaoId = selClasses.value || null; });
+        areaClasses.append(
+          Object.assign(document.createElement('span'), { textContent: 'Vocação', style: 'font-size:11px;font-weight:600' }),
+          selClasses,
+        );
+        area.appendChild(areaClasses);
+      },
+      botoes: [
+        { texto: 'Cancelar' },
+        {
+          texto: 'Salvar',
+          classe: 'primario',
+          aoClicar: async () => {
+            try {
+              await salvarPersonagem(linha.uid, d);
+              delete this.caches.personagens;
+              this.status('Personagem salvo.');
+              this.renderizarPersonagens(this.overlay?.querySelector('#adminConteudo'));
+            } catch (erro) {
+              this.status('Erro ao salvar: ' + (erro?.message ?? erro), '#c96a5a');
+            }
+          },
+        },
+      ],
+    });
+  }
+
+  /**
+   * Move um personagem: entre contas, ou só de posição no mapa.
+   *
+   * São duas operações parecidas com consequências bem diferentes: realocar
+   * um herói em outra conta tira o personagem de alguém, então o formulário
+   * de destino só lista contas onde ele CAiba (sem atingir o teto de 10).
+   */
+  abrirMoverPersonagem(linha, todosPersonagens, contaDe) {
+    const escuro = this.overlay?.classList.contains('escuro') ?? false;
+    const d = structuredClone(linha.dados ?? {});
+
+    abrirModal({
+      titulo: `Mover — ${linha.dados.nome ?? 'Personagem'}`,
+      escuro,
+      largura: 'min(94vw, 520px)',
+      desenhar: (corpo) => {
+        corpo.innerHTML = `
+          <p style="font-size:12px;color:#7b8794;margin:0 0 12px">
+            Mover entre contas tira o personagem do dono atual e entrega a outra.
+            Ambas as contas perdem a referência — confirme antes.
+          </p>
+          <div style="display:flex;flex-direction:column;gap:10px">
+            <label style="display:flex;flex-direction:column;gap:4px;font-size:12px;color:#5a6a78">
+              <span style="font-size:11px;font-weight:600">Conta de destino</span>
+              <select id="destinoMover"></select>
+            </label>
+            <label style="display:flex;flex-direction:column;gap:4px;font-size:12px;color:#5a6a78">
+              <span style="font-size:11px;font-weight:600">Nova posição X</span>
+              <input type="number" id="moverX" value="${d.posicao?.x ?? 0}">
+            </label>
+            <label style="display:flex;flex-direction:column;gap:4px;font-size:12px;color:#5a6a78">
+              <span style="font-size:11px;font-weight:600">Nova posição Y</span>
+              <input type="number" id="moverY" value="${d.posicao?.y ?? 0}">
+            </label>
+          </div>`;
+
+        const sel = corpo.querySelector('#destinoMover');
+        // Contas disponíveis: quem tem menos de 10 personagens. A conta de
+        // origem entra na lista de qualquer forma (mover na própria conta é
+        // só reposicionar).
+        const contas = new Map();
+        for (const p of todosPersonagens) contas.set(p.uid, (contas.get(p.uid) ?? 0) + 1);
+        const origem = [...contas.keys()].map((uid) => {
+          const c = contaDe(uid);
+          return { uid, nome: c?.nome ?? uid, total: contas.get(uid), email: c?.email };
+        });
+
+        sel.innerHTML = origem.map((c) => {
+          const lotado = c.total >= 10 && c.uid !== linha.uid;
+          return `<option value="${escaparAttr(c.uid)}" ${c.uid === linha.uid ? 'selected' : ''} ${lotado ? 'disabled' : ''}>
+            ${escaparHtml(c.nome)} — ${c.total}/10 ${lotado ? '(cheio)' : ''}
+          </option>`;
+        }).join('');
+
+        corpo.querySelector('#moverX').addEventListener('input', (e) => {
+          d.posicao = { ...(d.posicao ?? {}), x: Number(e.target.value) || 0 };
+        });
+        corpo.querySelector('#moverY').addEventListener('input', (e) => {
+          d.posicao = { ...(d.posicao ?? {}), y: Number(e.target.value) || 0 };
+        });
+        corpo._destino = sel;
+      },
+      botoes: [
+        { texto: 'Cancelar' },
+        {
+          texto: 'Mover',
+          classe: 'primario',
+          aoClicar: async (api) => {
+            const destino = api.corpo._destino?.value;
+            if (!destino) return;
+            if (!window.confirm(
+              destino === linha.uid
+                ? `Reposicionar "${linha.dados.nome}" em ${linha.dono}?`
+                : `Transferir "${linha.dados.nome}" de ${linha.dono} para outra conta?\n\nO dono atual perde o personagem.`,
+            )) return;
+            try {
+              await moverPersonagem(destino, d, linha.uid);
+              delete this.caches.personagens;
+              this.status('Personagem movido.');
+              this.renderizarPersonagens(this.overlay?.querySelector('#adminConteudo'));
+            } catch (erro) {
+              this.status('Erro ao mover: ' + (erro?.message ?? erro), '#c96a5a');
+            }
+          },
+        },
+      ],
+    });
+  }
 
   /** Aba de Backup: seleciona coleções e salva em coleção separada. */
   async renderizarBackup(conteudo) {

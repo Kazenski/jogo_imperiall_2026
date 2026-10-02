@@ -45,6 +45,7 @@ const ROTULOS_ESTACAO = Object.fromEntries(
 );
 import {
   CAMPOS_ITEM,
+  CAMPOS_CLASSE,
   CAMPOS_TALENTO,
   CAMPOS_MONSTRO,
   CAMPOS_RECEITA,
@@ -57,10 +58,11 @@ import {
   CORES_PALETA,
   DESCRICAO_PROCESSO,
   ROTULOS_PROCESSO,
-  CAMPOS_CLASSE,
   RESUMO,
   serializadores,
 } from '../src/dados/schemaAdmin.js';
+import { TAMANHO_PIXEL_ART } from '../src/ui/pixelart.js';
+import { TAMANHO_BLOCO } from '../src/core/mundo.js';
 import { TERMOS, PRIVACIDADE, VERSAO_TERMOS, DATA_TERMOS } from '../src/dados/legal.js';
 import { RACAS, RACA_PADRAO } from '../src/dados/racas.js';
 
@@ -531,6 +533,44 @@ console.log('\n== esquema do painel administrativo ==');
   );
   ok(camposNpc.loja?.tipo === 'area', 'NPC tem cadastro de loja');
   ok(camposNpc.missoes?.tipo === 'area', 'NPC tem cadastro de missoes');
+
+  // --- Pixel art ---
+  //
+  // O formato não é escolha: `TAMANHO_BLOCO = 32` em core/mundo.js é o bloco
+  // do mapa, e o sprite entra naquela mesma proporção. Um canvas retangular
+  // entraria esticado no mundo. O teste trava o quadrado para que uma troca
+  // de尺寸 "para caber mais detalhe" não passe despercebida.
+  // `TAMANHO_BLOCO` vem de core/mundo.js e `TAMANHO_PIXEL_ART` de ui/pixelart.js.
+  // Eles precisam bater: se o bloco do mapa mudar de tamanho, a arte tem de
+  // mudar junto, senão o sprite entra esticado.
+  ok(TAMANHO_PIXEL_ART === 32, `o pixel art e 32×32 (e ${TAMANHO_PIXEL_ART})`);
+  ok(
+    TAMANHO_BLOCO === TAMANHO_PIXEL_ART,
+    `o pixel art bate com o bloco do mundo (${TAMANHO_BLOCO} vs ${TAMANHO_PIXEL_ART})`,
+  );
+
+  // Todo campo de imagem que aceita pixel art declara isso, senão o botão do
+  // editor não aparece e o admin perde a ferramenta sem aviso.
+  const comImagem = [CAMPOS_ITEM, CAMPOS_MONSTRO, CAMPOS_CLASSE, CAMPOS_NPC];
+  ok(
+    comImagem.every((campos) => campos.some((c) => c.chave === 'imagem' && c.pixelArt === true)),
+    'itens, monstros, classes e npcs tem o botao de pixel art',
+  );
+
+  // --- Mapa do NPC ---
+  //
+  // A grade é limitada para caber na tela. Sem o limite, um mundo de 256
+  // blocos gera 65.536 divs e trava o navegador. O limite é verificado
+  // lendo o código-fonte: a função depende do DOM e não roda em Node.
+  const fonteAdmin = fs.readFileSync(new URL('../src/scenes/AdminScene.js', import.meta.url), 'utf8');
+  ok(
+    /ladoDaGrade\(mundo\)[\s\S]{0,320}?Math\.min\(\s*96\s*,/.test(fonteAdmin),
+    'a grade do mapa tem teto de 96 blocos por lado (evita travar com mundo enorme)',
+  );
+  ok(
+    fonteAdmin.includes('abrirMapaNpcEmModal'),
+    'existe modal do mapa em tamanho grande',
+  );
 
   // Todo resumo de lista existe e devolve texto.
   for (const [nome, campos] of Object.entries(esquemas)) {
