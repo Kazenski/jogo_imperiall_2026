@@ -11,7 +11,8 @@ import { carregarCatalogo } from '../core/catalogo.js';
 import { temConsentimento } from '../core/apagamento.js';
 import { ACEITE_REQUERIDO } from '../dados/legal.js';
 import { OURO, PERGAMINHO } from '../constants.js';
-import { garantirPerfil, ehAdmin } from '../core/usuarios.js';
+import { garantirPerfil } from '../core/progresso.js';
+import { ehAdmin } from '../core/usuarios.js';
 import { botao } from '../ui/comuns.js';
 
 export class LoginScene extends Phaser.Scene {
