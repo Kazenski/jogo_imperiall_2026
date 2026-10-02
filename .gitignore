@@ -34,3 +34,5 @@ desktop.ini
 .idea/
 .vs/
 *.tmp
+# Pasting de dist/ para servir localmente em outro prefixo. Nunca versionar.
+_preview/
