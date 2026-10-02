@@ -139,6 +139,24 @@ export class StatusScene extends Phaser.Scene {
       altura: 36,
     });
 
+    // Direito de eliminacao da LGPD (art. 18, VI) com um caminho de um clique.
+    // Ficou aqui, e nao em uma tela escondida, porque exigir que o jogador
+    // procure um e-mail para apagar o proprio dado e o inverso de dar a
+    // igualdade de tratamento que a lei pede.
+    const btnApagar = botao(this, x0 + 110, y0 + h - 32, 'Apagar meu progresso', () => this.confirmarApagar(), {
+      largura: 200,
+      altura: 36,
+      tamanho: '12px',
+      cor: 0x3a2020,
+      corHover: 0x5a2a26,
+      corBorda: 0x7a2f2a,
+      corTexto: '#e8b0a8',
+    });
+    uiTexto(this, x0 + 220, y0 + h - 16, 'Apaga a conta de jogo, a base e o portal. Não dá para desfazer.', {
+      fontSize: '9px',
+      color: PERGAMINHO,
+    }).setAlpha(0.6);
+
     capa.on('pointerdown', () => this.fechar());
     this.input.keyboard.on('keydown-V', () => this.fechar());
     this.input.keyboard.on('keydown-ESC', () => this.fechar());
@@ -293,6 +311,100 @@ export class StatusScene extends Phaser.Scene {
       partes.push(`${chave} ${valor > 0 ? '+' : ''}${Math.round(valor * 100) / 100}`);
     }
     return partes.length ? `Equipado: ${partes.join('  ')}` : '';
+  }
+
+  /**
+   * Confirmacao de eliminacao de dados.
+   *
+   * Dois cliques e uma frase: o que vai sumir, que nao da para desfazer, e a
+   * opcao de sair. Apagar a conta errada e o pior erro possivel numa tela que
+   * o jogador abre por curiosidade.
+   */
+  confirmarApagar() {
+    if (!this.uid) {
+      this.mostrarAviso('Voce esta jogando sem conta. Nao ha dados no servidor para apagar.');
+      return;
+    }
+    if (this._modalApagar) return;
+
+    const { width, height } = this.scale;
+    const w = Math.min(440, width - 60);
+    const h = 210;
+    const x0 = Math.round((width - w) / 2);
+    const y0 = Math.round((height - h) / 2);
+    const camada = this.add.container(0, 0).setDepth(9000);
+
+    const capa = this.add
+      .rectangle(width / 2, height / 2, width, height, 0x000000, 0.7)
+      .setOrigin(0.5)
+      .setInteractive();
+    const box = caixaArredondada(this, x0 + w / 2, y0 + h / 2, w, h, {
+      raio: 12,
+      preenchimento: 0x1a140e,
+      borda: 0x7a2f2a,
+      larguraBorda: 2,
+      origem: [0.5, 0.5],
+    });
+    camada.add([capa, box]);
+
+    camada.add(
+      uiTitulo(this, x0 + w / 2, y0 + 22, 'Apagar meus dados?', '16px').setOrigin(0.5, 0),
+    );
+    camada.add(
+      uiTexto(
+        this,
+        x0 + w / 2,
+        y0 + 52,
+        'Serao apagados: seu progresso (nivel, itens, ouro, orbes), sua base, ' +
+          'sua arvore de talentos e o portal publicado para os amigos.\n\n' +
+          'O login com o Google continua funcionando, mas o jogo comeca do zero. ' +
+          'Esta acao nao pode ser desfeita.',
+        { fontSize: '11px', align: 'center', wordWrap: { width: w - 48 }, lineSpacing: 3 },
+      )
+        .setOrigin(0.5, 0),
+    );
+
+    const fechar = () => {
+      camada.destroy(true);
+      this._modalApagar = null;
+    };
+
+    const btnApagar = botao(this, x0 + w / 2 - 95, y0 + h - 32, 'Apagar tudo', async () => {
+      btnApagar.definirVisual(0x5a2a26);
+      this.mostrarAviso('Apagando...');
+      const { apagarDadosDoJogador } = await import('../core/apagamento.js');
+      const r = await apagarDadosDoJogador(this.uid);
+      fechar();
+      if (r.ok) {
+        this.scene.stop();
+        this.scene.start('Login');
+      } else {
+        this.mostrarAviso(`Nao foi possivel apagar tudo: ${r.erro}`);
+      }
+    }, {
+      largura: 170,
+      altura: 34,
+      tamanho: '13px',
+      cor: 0x7a2f2a,
+      corHover: 0x9a3a33,
+      corBorda: 0xa04a42,
+      corTexto: '#ffe6e0',
+    });
+    camada.add(btnApagar.caixa);
+
+    const btnCancelar = botao(this, x0 + w / 2 + 95, y0 + h - 32, 'Cancelar', fechar, {
+      largura: 170,
+      altura: 34,
+      tamanho: '13px',
+      cor: 0x3a2c20,
+      corHover: 0x4a3828,
+      corBorda: 0x8a6a2f,
+      corTexto: PERGAMINHO,
+    });
+    camada.add(btnCancelar.caixa);
+
+    capa.on('pointerdown', fechar);
+    this._modalApagar = camada;
   }
 
   mostrarAviso(texto) {

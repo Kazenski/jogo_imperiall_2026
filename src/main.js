@@ -8,6 +8,9 @@ import { TalentosScene } from './scenes/TalentosScene.js';
 import { FabricacaoScene } from './scenes/FabricacaoScene.js';
 import { ReinosScene } from './scenes/ReinosScene.js';
 import { StatusScene } from './scenes/StatusScene.js';
+import { CriacaoScene } from './scenes/CriacaoScene.js';
+import { TermosScene } from './scenes/TermosScene.js';
+import { AjudaScene } from './scenes/AjudaScene.js';
 
 const config = {
   type: Phaser.AUTO,
@@ -35,6 +38,12 @@ const config = {
   scene: [
     BootScene,
     LoginScene,
+    // Ordem de entrada na ordem de uso. O Phaser nao respeita esta ordem para
+    // navegacao (cada cena chama `scene.start` explicitamente), mas deixa claro
+    // o fluxo: Login -> Termos -> Criacao -> World.
+    TermosScene,
+    CriacaoScene,
+    AjudaScene,
     WorldScene,
     InventarioScene,
     TalentosScene,

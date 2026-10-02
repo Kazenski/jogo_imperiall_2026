@@ -111,3 +111,39 @@ export const repoAchievements = {
   salvar: (id, dados, merge) => salvarDoc('achievements', id, dados, merge),
   remover: (id) => removerDoc('achievements', id),
 };
+
+// ---------- Além do catálogo: modulatoria do jogo ----------
+
+// Estas colecoes NAO fazem parte do catalogo (o jogador nao as ve no jogo), mas
+// o administrador precisa poder ver quem esta jogando e quais bases estao
+// publicadas — sem isso, promoted/rebaixar admin e esconder um portal exigem
+// abrir o console do Firebase.
+
+export const repoUsuarios = {
+  listar: () => listarColecao('users', 'nome'),
+  obter: (id) => obterDoc('users', id),
+  salvar: (id, dados, merge) => salvarDoc('users', id, dados, merge),
+};
+
+export const repoPortais = {
+  listar: () => listarColecao('portais', 'nome'),
+  obter: (id) => obterDoc('portais', id),
+  salvar: (id, dados, merge) => salvarDoc('portais', id, dados, merge),
+  remover: (id) => removerDoc('portais', id),
+};
+
+/** Uids marcados como administrador (system/admins). */
+export async function listarAdmins() {
+  const docRef = obterDoc('system', 'admins');
+  const dados = await docRef;
+  return Array.isArray(dados?.uids) ? dados.uids : [];
+}
+
+export async function definirAdminUid(uid, ativo) {
+  const atual = await listarAdmins();
+  const conjunto = new Set(atual);
+  if (ativo) conjunto.add(uid);
+  else conjunto.delete(uid);
+  await salvarDoc('system', 'admins', { uids: Array.from(conjunto) });
+  return Array.from(conjunto);
+}

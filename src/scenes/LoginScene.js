@@ -7,6 +7,9 @@ import {
   traduzirErro,
 } from '../core/firebase.js';
 import { carregarProgresso, salvarProgresso } from '../core/progresso.js';
+import { carregarCatalogo } from '../core/catalogo.js';
+import { temConsentimento } from '../core/apagamento.js';
+import { ACEITE_REQUERIDO } from '../dados/legal.js';
 import { OURO, PERGAMINHO } from '../constants.js';
 import { garantirPerfil, ehAdmin } from '../core/usuarios.js';
 import { botao } from '../ui/comuns.js';
@@ -104,7 +107,7 @@ export class LoginScene extends Phaser.Scene {
     // ja estiver logado ao abrir o jogo
     this.cancelarObservacao = observarLogin(async (user) => {
       if (user) {
-        this.status.setText(`Conectado como ${user.displayName ?? user.email}`);
+        this.avisarStatus(`Conectado como ${user.displayName ?? user.email}`);
         await this.entrar(user);
       }
     });
@@ -119,6 +122,31 @@ export class LoginScene extends Phaser.Scene {
     });
   }
 
+  /**
+   * Escreve na linha de status **sem rebentar** se a cena já morreu.
+   *
+   * `entrar()` termina com `scene.start('Criacao')`, e é a `CriacaoScene` que
+   * chama `paraCriacao()` de volta quando o jogador confirma. A essa altura a
+   * cena de Login já foi derrubada: os `Text` dela têm o canvas destruído, e
+   * qualquer `setText` posterior estoura com
+   *
+   *   TypeError: Cannot read properties of null (reading 'drawImage')
+   *   at Frame.updateUVs ... at Text.setText
+   *
+   * — o que derrubava a transição inteira e deixava o jogador sem cena
+   * nenhuma na tela, sem mensagem. O objeto continua no JavaScript (o GC não
+   * passou por ele), então `this.status?.setText` não acusaria nada; só
+   * `sys.isActive()` diz a verdade.
+   */
+  avisarStatus(msg) {
+    if (!this.sys?.isActive()) return;
+    try {
+      this.avisarStatus(msg);
+    } catch {
+      /* a cena caiu entre o teste e a escrita: não há mais tela para avisar */
+    }
+  }
+
   relayout() {
     // Recalcula posicoes e reconstroi os botoes na nova largura.
     this.scene.restart();
@@ -126,7 +154,7 @@ export class LoginScene extends Phaser.Scene {
 
   async tentarGoogle() {
     this.botaoEntrar?.definirVisual(0x8a6a2f);
-    this.status.setText('Abrindo o login do Google...');
+    this.avisarStatus('Abrindo o login do Google...');
 
     try {
       const user = await entrarComGoogle();
@@ -134,18 +162,43 @@ export class LoginScene extends Phaser.Scene {
     } catch (erro) {
       console.error(erro);
       this.botaoEntrar?.definirVisual(0xd4af6a);
-      this.status.setText(traduzirErro(erro));
+      this.avisarStatus(traduzirErro(erro));
     }
   }
 
-  /** Carrega/cria a progressao e vai para o mundo. */
+  /**
+   * Carrega/cria o progresso e decide por onde o jogador entra.
+   *
+   * A ordem das telas e uma REGRA, não preferência de layout:
+   *
+   *   Login -> Termos -> Criação do personagem -> Mundo
+   *
+   *  - Termos primeiro porque é o único momento em que o aceite precisa ser
+   *    explícito. Depois de gravar a versão, o jogo não pergunta de novo até a
+   *    próxima alteração do documento legal.
+   *  - Criação antes do Mundo porque o mundo gera monstros em volta do ponto de
+   *    entrada: sem personagem definido, o jogador aparecia no meio deles.
+   *
+   * Sem conta (modo local) os termos não são exigidos: não há dado pessoal
+   * para consentir, e travar o jogo local seria pior do que a proteção.
+   */
   async entrar(user) {
     const uid = user?.uid ?? null;
     const nome = user?.displayName ?? 'Viajante';
 
-    this.status.setText('Carregando seu reino...');
+    this.avisarStatus('Carregando seu reino...');
 
     try {
+      // O catálogo é carregado AQUI, uma vez, e viaja no `contexto` para todas
+      // as cenas seguintes.
+      //
+      // Antes ele era carregado só no fim de `paraCriacao`, o que significava
+      // que a `CriacaoScene` recebia `catalogo: undefined` — e o seletor de
+      // vocação aparecia com "Nenhuma vocação cadastrada pelo administrador"
+      // mesmo com quatro classes na semente. Carregar tarde demais não é o
+      // mesmo que não carregar: os dados existiam, só não tinham chegado.
+      const catalogo = await carregarCatalogo();
+
       let progresso = await carregarProgresso(uid);
 
       // Primeiro login: usa o nome do Google no primeiro salvamento.
@@ -169,23 +222,100 @@ export class LoginScene extends Phaser.Scene {
         }
       }
 
-      this.scene.start('World', {
+      const contexto = {
         uid,
         nome,
         email: user?.email ?? null,
         podeSair: Boolean(uid),
-        estado: progresso,
+        progresso,
         perfil,
         isAdmin: isAdminUser,
+        catalogo,
+      };
+
+      // --- Termos ---
+      if (uid) {
+        const aceitou = await temConsentimento(uid, ACEITE_REQUERIDO.versao);
+        if (!aceitou) {
+          this.avisarStatus('');
+          this.scene.start('Termos', {
+            ...contexto,
+            estado: progresso,
+            aoAceitar: async (aceite) => {
+              const atualizado = await salvarProgresso(uid, {
+                termos: { versao: aceite.versao, data: aceite.data, aceitoEm: Date.now() },
+              });
+              this.scene.start('Criacao', {
+                ...contexto,
+                estado: atualizado,
+                aoConcluir: (escolha) => this.paraCriacao(contexto, escolha),
+              });
+            },
+          });
+          return;
+        }
+      }
+
+      // --- Criação de personagem ---
+      this.scene.start('Criacao', {
+        ...contexto,
+        estado: progresso,
+        aoConcluir: (escolha) => this.paraCriacao(contexto, escolha),
       });
     } catch (erro) {
       // Sem isto, uma falha aqui deixa o jogador preso na tela de login sem
       // nenhuma explicacao — parecia "o jogo me deslogou".
       console.error('[Login] falha ao entrar:', erro);
-      this.status.setText(
+      this.avisarStatus(
         `Nao foi possivel carregar seu reino: ${erro?.message ?? erro}\nTente de novo.`,
       );
       if (this.botaoEntrar) this.botaoEntrar.definirVisual(0xd4af6a);
+    }
+  }
+
+  /** Grava nome/raça/vocação e só então inicia o mundo. */
+  async paraCriacao(contexto, escolha) {
+    const { uid, progresso } = contexto;
+
+    // `null` = cancelou a edição de um personagem existente.
+    if (!escolha) {
+      this.scene.start('World', {
+        uid,
+        nome: progresso.nome,
+        email: contexto.email,
+        podeSair: contexto.podeSair,
+        estado: progresso,
+        catalogo: contexto.catalogo,
+        perfil: contexto.perfil,
+        isAdmin: contexto.isAdmin,
+      });
+      return;
+    }
+
+    this.avisarStatus('Forjando seu personagem...');
+    try {
+      let estado = await salvarProgresso(uid, {
+        nome: escolha.nome,
+        racaId: escolha.racaId,
+        vocacaoId: escolha.vocacaoId,
+        // Marca que a criação terminou. Sem isto, `CriacaoScene` reabriria em
+        // modo edição para quem só entrou para olhar a tela.
+        personagemCriadoEm: Date.now(),
+      });
+
+      this.scene.start('World', {
+        uid,
+        nome: escolha.nome,
+        email: contexto.email,
+        podeSair: contexto.podeSair,
+        estado,
+        catalogo: contexto.catalogo,
+        perfil: contexto.perfil,
+        isAdmin: contexto.isAdmin,
+      });
+    } catch (erro) {
+      console.error('[Login] falha ao criar personagem:', erro);
+      this.avisarStatus(`Nao foi possivel criar o personagem: ${erro?.message ?? erro}`);
     }
   }
 }

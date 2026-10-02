@@ -331,7 +331,23 @@ export function talentoDisponivel(estado, talento, arvore) {
 
   const arvoreAtual = arvore ?? estado.arvoreDesbloqueada ?? [];
   const pre = talento.preRequisitos ?? [];
-  return pre.every((id) => arvoreAtual.includes(id));
+  if (!pre.every((id) => arvoreAtual.includes(id))) return false;
+
+  // Pre-requisito de ATRIBUTO: `{ fis: 5 }` significa "sobe Fisico ate 5".
+  // Diferente do nivel do jogador, este numero nao vem da progressao — vem das
+  // distribuicoes que o jogador fez no Personagem (V). Sem esta checagem o
+  // admin cadastra um talento "Fisico 5" que nunca destrava, porque ninguem
+  // sabe que precisa investir pontos ali antes.
+  return atributosAtendidos(estado, talento.preRequisitoNiveis);
+}
+
+/** Todos os pares `atributo: minimo` de `preRequisitoNiveis` estao satisfeitos. */
+export function atributosAtendidos(estado, requisitoNiveis) {
+  if (!requisitoNiveis) return true;
+  const atributos = estado?.atributos ?? {};
+  return Object.entries(requisitoNiveis).every(
+    ([chave, minimo]) => Number(atributos[chave] ?? 0) >= Number(minimo ?? 0),
+  );
 }
 
 export function talentosAtivos(catalogo, estado) {
@@ -360,6 +376,13 @@ export function desbloquearTalento(estado, talento, catalogo) {
     if (!arvore.includes(id)) {
       return { ok: false, motivo: 'Pre-requisito ausente.' };
     }
+  }
+  if (!atributosAtendidos(estado, talento.preRequisitoNiveis)) {
+    const pendente = Object.entries(talento.preRequisitoNiveis ?? {})
+      .filter(([chave, min]) => Number(estado.atributos?.[chave] ?? 0) < Number(min))
+      .map(([chave, min]) => `${chave} ${estado.atributos?.[chave] ?? 0}/${min}`)
+      .join(', ');
+    return { ok: false, motivo: `Requer atributos: ${pendente}.` };
   }
   const custo = custoTalento(talento);
   if ((estado.pontosTalento ?? 0) < custo) {

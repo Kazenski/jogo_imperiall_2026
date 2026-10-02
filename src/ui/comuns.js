@@ -321,14 +321,35 @@ export function fluxoBotoes(pai, x, y, larguraUtil, botoes, opcoes = {}) {
   return { alturaTotal: cy + altura - y, linhas: usado === 0 ? 0 : Math.round((cy - y) / passoLinha) + 1 };
 }
 
-/** Linha clicavel de lista (nome + detalhe). */
-export function linhaLista(scene, x, y, largura, nome, detalhe, onClick) {
-  const altura = 40;
+/**
+ * Linha clicavel de lista (nome + detalhe).
+ *
+ * `opcoes` adiciona os tres estados que as listas grandes precisaram:
+ *  - `alfa`        esmaece a linha inteira (ex.: receita sem insumos)
+ *  - `selecionado` pinta o fundo e engrossa a borda
+ *  - `altura`      altura diferente da padrão, para linhas de duas linhas
+ *  - `alturaNome`  deslocamento da segunda linha quando `altura` muda
+ *
+ * Sem `opcoes` a função se comporta exatamente como antes, para não quebrar os
+ * pontos de chamada que já existiam.
+ */
+export function linhaLista(scene, x, y, largura, nome, detalhe, onClick, opcoes = {}) {
+  const {
+    alfa = 1,
+    selecionado = false,
+    altura: alturaCustom = 40,
+    corFundo = 0x1d1710,
+    corFundoSelecionado = 0x2f2418,
+    corBorda = 0x2e241a,
+    corBordaSelecionado = OURO,
+  } = opcoes;
+  const altura = alturaCustom;
+  const yNome = y + (altura >= 44 ? 9 : 7);
   const box = caixaArredondada(scene, x, y, largura, altura, {
     raio: 8,
-    preenchimento: 0x1d1710,
-    borda: 0x2e241a,
-    larguraBorda: 1,
+    preenchimento: selecionado ? corFundoSelecionado : corFundo,
+    borda: selecionado ? corBordaSelecionado : corBorda,
+    larguraBorda: selecionado ? 2 : 1,
     origem: [0, 0],
   });
 
@@ -339,32 +360,40 @@ export function linhaLista(scene, x, y, largura, nome, detalhe, onClick) {
   box.add(clique);
 
   const t1 = scene.add
-    .text(x + 12, y + 7, nome, { ...FONTE_UI, fontSize: '13px', color: OURO })
+    .text(x + 12, yNome, nome, { ...FONTE_UI, fontSize: '13px', color: OURO })
     .setOrigin(0, 0);
   const t2 = scene.add
-    .text(x + 12, y + 23, detalhe, { ...FONTE_UI, fontSize: '10px', color: PERGAMINHO })
+    .text(x + 12, yNome + 16, detalhe, { ...FONTE_UI, fontSize: '10px', color: PERGAMINHO })
     .setOrigin(0, 0)
     .setAlpha(0.75);
 
+  if (alfa !== 1) {
+    box.caixa.setAlpha(alfa);
+    t1.setAlpha(alfa);
+    t2.setAlpha(0.75 * alfa);
+  }
+
+  const pintar = (fundo, borda, espessura) => {
+    box.caixa.clear();
+    box.caixa.fillStyle(fundo, 1);
+    box.caixa.fillRoundedRect(0, 0, largura, altura, 8);
+    box.caixa.lineStyle(espessura, borda, 1);
+    box.caixa.strokeRoundedRect(0, 0, largura, altura, 8);
+  };
+
   if (onClick) {
-    clique.on('pointerover', () => {
-      box.caixa.clear();
-      box.caixa.fillStyle(0x2a2018, 1);
-      box.caixa.fillRoundedRect(0, 0, largura, altura, 8);
-      box.caixa.lineStyle(1, OURO, 1);
-      box.caixa.strokeRoundedRect(0, 0, largura, altura, 8);
-    });
-    clique.on('pointerout', () => {
-      box.caixa.clear();
-      box.caixa.fillStyle(0x1d1710, 1);
-      box.caixa.fillRoundedRect(0, 0, largura, altura, 8);
-      box.caixa.lineStyle(1, 0x2e241a, 1);
-      box.caixa.strokeRoundedRect(0, 0, largura, altura, 8);
-    });
+    clique.on('pointerover', () => pintar(0x2a2018, OURO, 1));
+    clique.on('pointerout', () =>
+      pintar(
+        selecionado ? corFundoSelecionado : corFundo,
+        selecionado ? corBordaSelecionado : corBorda,
+        selecionado ? 2 : 1,
+      ),
+    );
     clique.on('pointerdown', onClick);
   }
 
-  return { caixa: box, clique, t1, t2 };
+  return { caixa: box, clique, t1, t2, altura };
 }
 
 /**
@@ -463,6 +492,8 @@ export function campoTexto(scene, x, y, largura, altura, valor = '', opcoes = {}
     placeholder = '',
     maxLength = 24,
     aoConfirmar = null,
+    aoMudar = null,
+    chave = null,
   } = opcoes;
 
   const box = caixaArredondada(scene, x, y, largura, altura, {
@@ -543,16 +574,81 @@ export function campoTexto(scene, x, y, largura, altura, valor = '', opcoes = {}
     confirmado = true;
     aoConfirmar?.(input.value.trim());
   });
+
+  // Estado vivo durante a digitação.
+  //
+  // Sem este listener, o texto só chega na cena quando o campo perde o foco
+  // (`blur`) ou quando o jogador aperta Enter. Funciona "por acidente" quando o
+  // botão de.submit está no canvas — o clique causa o blur primeiro — mas a
+  // cena lê estado velho até lá, e qualquer submissão que aconteça antes do blur
+  // salva o valor anterior. Foi o que fazia o personagem nascer com o nome
+  // "Viajante" mesmo depois de a pessoa digitar o nome dela.
+  input.addEventListener('input', () => {
+    marcarFoco();
+    aoMudar?.(input.value);
+  });
   // Impede que o clique no proprio campo caia no canvas por tras.
   input.addEventListener('mousedown', (ev) => ev.stopPropagation());
+
+  // ---------- foco que sobrevive ao redesenho ----------
+  //
+  // Os painéis do jogo redesenham a tela inteira a cada mudança (filtrar uma
+  // lista, trocar um chip, salvar). Como o `<input>` é do DOM e o resto é
+  // canvas, um redesenho **destrói o elemento onde a pessoa está digitando**:
+  // o foco cai no `<body>` e a palavra some no meio da digitação.
+  //
+  // A cena guarda qual campo tem o foco e onde está o cursor; `restaurarFoco`
+  // devolve os dois depois que o painel foi reconstruído. É o mínimo para o
+  // filtro do painel administrativo poder responder a cada tecla.
+  const marcarFoco = () => {
+    scene._foco = { chave, inicio: input.selectionStart ?? 0, fim: input.selectionEnd ?? 0 };
+  };
+
+  input.addEventListener('focus', marcarFoco);
+  input.addEventListener('keyup', () => {
+    if (scene._foco?.chave === chave) marcarFoco();
+  });
+  input.addEventListener('click', () => {
+    if (scene._foco?.chave === chave) marcarFoco();
+  });
+  input.addEventListener('blur', () => {
+    if (scene._foco?.chave === chave) scene._foco = null;
+  });
 
   return {
     box,
     input,
+    chave,
     valor: () => input.value.trim(),
     focar: () => input.focus(),
+    /** Devolve o foco e o cursor a este campo. */
+    restaurarFoco(inicio = 0, fim = inicio) {
+      if (input.readOnly || input.disabled) return false;
+      if (!input.isConnected) return false;
+      input.focus();
+      const i = Math.min(inicio ?? 0, input.value.length);
+      const f = Math.min(fim ?? i, input.value.length);
+      try {
+        input.setSelectionRange(i, f);
+      } catch {
+        /* tipos sem selecao (ex.: email) aceitam foco, mas nao cursor */
+      }
+      return true;
+    },
     destruir: limpar,
   };
+}
+
+/**
+ * Devolve o foco ao campo com a mesma `chave` do objeto `foco`.
+ *
+ * Usado depois de um redesenho: `campoTexto` grava `scene._foco` sozinho, a
+ * cena redesenha, e depois chama isto com o valor que guardou antes.
+ */
+export function restaurarFoco(scene, foco, campos = []) {
+  if (!foco?.chave) return false;
+  const alvo = campos.find((c) => c?.chave === foco.chave);
+  return alvo?.restaurarFoco ? alvo.restaurarFoco(foco.inicio, foco.fim) : false;
 }
 
 /** Apaga todos os filhos de um container com seguranca. */

@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Jogo 2D medieval estilo Starbound, com portais para as bases dos amigos",
+  "description": "Jogo 2D medieval de construcao e sobrevivencia com Portais Arcanos entre as bases dos amigos",
   "scripts": {
     "dev": "vite",
     "build": "vite build",

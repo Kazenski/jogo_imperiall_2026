@@ -53,7 +53,7 @@ import {
  * varredura generica em `scene.scenes`) porque `Admin` eo proprio `World`
  * Matcheriam junto e parar o mundo no meio de um painel.
  */
-const PAINEIS_SOBREPOSTOS = ['Status', 'Inventario', 'Talentos', 'Fabricacao', 'Reinos', 'Admin'];
+const PAINEIS_SOBREPOSTOS = ['Status', 'Inventario', 'Talentos', 'Fabricacao', 'Reinos', 'Ajuda', 'Admin'];
 
 const COLUNAS = 34;
 const LINHAS = 26;
@@ -518,7 +518,11 @@ export class WorldScene extends Phaser.Scene {
     // As dicas deixaram de ser um texto corrido no topo: viraram um botao que
     // abre um modal. Um paragrafo de atalhos no canto da tela competia com o
     // nome, o nivel e os recursos, e nao cabia em telas estreitas.
-    this.botaoDicas = botao(this, this.scale.width - 18, 10, 'Dicas  [H]', () => this.abrirDicas(), {
+    //
+    // Agora esse botao abre a WIKI (tecla H), e o resumo de teclas fica em
+    // `abrirDicas()`, que continua acessivel pelo clique no proprio botao com
+    // o painel ja aberto — evita duas rotas para a mesma informacao.
+    this.botaoAjuda = botao(this, this.scale.width - 18, 10, 'Wiki  [H]', () => this.abrirAjuda(), {
       origem: [1, 0],
       largura: 84,
       altura: 26,
@@ -529,7 +533,7 @@ export class WorldScene extends Phaser.Scene {
       corTexto: PERGAMINHO,
       tamanho: '11px',
     });
-    this.hud.add(this.botaoDicas.caixa);
+    this.hud.add(this.botaoAjuda.caixa);
 
     this.toast = uiTexto(this, this.scale.width / 2, 110, '', {
       fontSize: '14px',
@@ -571,6 +575,25 @@ export class WorldScene extends Phaser.Scene {
     const x0 = Math.round((width - w) / 2);
     const y0 = Math.round((height - h) / 2);
 
+    const atalhos = [
+      ['Andar', 'W, A, S, D'],
+      ['Olhar o mapa', 'arrastar'],
+      ['Usar / atacar / minerar', 'E'],
+      ['Construir bloco', 'Q'],
+      ['Publicar / ocultar portal', 'B'],
+      ['Personagem', 'V'],
+      ['Mochila', 'I'],
+      ['Talentos', 'T'],
+      ['Fabricacao', 'C'],
+      ['Reinos Etereos', 'R'],
+      ['Portais', 'P'],
+      ['Wiki do Imperio', 'H'],
+      ['Fechar painel', 'ESC'],
+    ];
+
+    // A capa precisa ficar ABAIXO do `box` (o retangulo e added primeiro): se o
+    // container fosse criado antes e a capa addada nele, o retangulo
+    // interativo cobriria os botoes.
     const capa = this.add
       .rectangle(width / 2, height / 2, width, height, 0x000000, 0.6)
       .setInteractive()
@@ -580,43 +603,36 @@ export class WorldScene extends Phaser.Scene {
 
     box.add(capa);
     box.add(painel(this, x0, y0, w, h));
-    box.add(uiTitulo(this, x0 + 24, y0 + 20, 'COMO JOGAR', '18px'));
+    box.add(uiTitulo(this, x0 + 24, y0 + 20, 'ATALHOS', '18px'));
 
-    const secao = [
-      ['Andar', 'W, A, S, D ou as setas'],
-      ['Olhar o mapa', 'arraste com o botao esquerdo do mouse'],
-      ['Usar / atacar / minerar', 'E'],
-      ['Construir o bloco selecionado', 'Q'],
-      ['Expor ou ocultar sua base no portal', 'B'],
-      ['Personagem, atributos e apelido', 'V'],
-      ['Mochila e Orbes Arcanos', 'I'],
-      ['Arvore de talentos', 'T'],
-      ['Fabricacao', 'C'],
-      ['Reinos Etereos', 'R'],
-      ['Lista de portais', 'P'],
-      ['Fechar qualquer painel', 'ESC'],
-    ];
-    if (this.isAdmin) secao.push(['Painel do administrador', 'F2']);
-
-    let y = y0 + 58;
-    for (const [rotulo, tecla] of secao) {
+    let y = y0 + 54;
+    for (const [rotulo, tecla] of atalhos) {
       box.add(uiTexto(this, x0 + 24, y, rotulo, { fontSize: '12px' }));
       box.add(
         uiTexto(this, x0 + w - 24, y, tecla, { fontSize: '12px', color: OURO, align: 'right' })
           .setOrigin(1, 0)
           .setAlpha(0.9),
       );
-      y += 21;
+      y += 20;
     }
 
+    if (this.isAdmin) {
+      box.add(uiTexto(this, x0 + 24, y, 'Painel do administrador', { fontSize: '12px' }));
+      box.add(
+        uiTexto(this, x0 + w - 24, y, 'F2', { fontSize: '12px', color: OURO, align: 'right' })
+          .setOrigin(1, 0)
+          .setAlpha(0.9),
+      );
+      y += 20;
+    }
+
+    // A lista completa vive na wiki (H). Este modal ficou so com o resumo, que
+    // cabe numa tela e nao empurra mais nada para fora.
     box.add(
-      uiTexto(
-        this,
-        x0 + 24,
-        y + 10,
-        'Dica: o botao Dica abre e fecha esta janela. Varios botoes aceitam o mouse.',
-        { fontSize: '11px' },
-      ).setAlpha(0.6),
+      botao(this, x0 + w / 2 - 100, y + 16, 'Abrir a Wiki do Imperio', () => {
+        this.fecharModal();
+        this.abrirAjuda();
+      }, { largura: 240, altura: 32, tamanho: '12px', cor: 0x2a2018, corHover: 0x3a2c20, corBorda: 0x8a6a2f, corTexto: PERGAMINHO }).caixa,
     );
 
     box.add(
@@ -630,6 +646,16 @@ export class WorldScene extends Phaser.Scene {
     capa.on('pointerdown', () => this.fecharModal());
     this.input.keyboard.once('keydown-ESC', () => this.fecharModal());
     this.input.keyboard.once('keydown-H', () => this.fecharModal());
+  }
+
+  /** Abre a wiki (tecla H). */
+  abrirAjuda() {
+    this.abrirSobreposto('Ajuda', {
+      uid: this.uid,
+      estado: this.estado,
+      catalogo: this.catalogo,
+      isAdmin: this.isAdmin,
+    });
   }
 
   fecharModal() {
@@ -821,7 +847,7 @@ export class WorldScene extends Phaser.Scene {
     this.input.keyboard.on('keydown-R', () => this.abrirReinos());
     this.input.keyboard.on('keydown-P', () => this.abrirPainelDePortais());
     this.input.keyboard.on('keydown-V', () => this.abrirStatus());
-    this.input.keyboard.on('keydown-H', () => this.abrirDicas());
+    this.input.keyboard.on('keydown-H', () => this.abrirAjuda());
 
     // ESC so fecha painel. Antes ele DESLOGAVA a conta quando nao havia painel
     // aberto — apertar ESC para fechar algo e perder a sessao era facil, e

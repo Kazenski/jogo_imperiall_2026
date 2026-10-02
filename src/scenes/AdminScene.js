@@ -1,17 +1,6 @@
 import Phaser from 'phaser';
 import { OURO, PERGAMINHO } from '../constants.js';
 import {
-  TIPOS_ITEM,
-  USOS_ITEM,
-  RARIDADES,
-  ESTAÇÕES,
-  TIPOS_ORBE,
-  FAIXAS_NIVEL_ORBE,
-  TIPOS_HABILIDADE,
-  COMPORTAMENTOS_MONSTRO,
-  TIPOS_ACHIEVEMENT,
-} from '../core/enums.js';
-import {
   repoItens,
   repoClasses,
   repoSkills,
@@ -19,17 +8,120 @@ import {
   repoMonstros,
   repoWorldTemplates,
   repoAchievements,
+  repoUsuarios,
+  repoPortais,
+  listarAdmins,
+  definirAdminUid,
 } from '../core/repos.js';
+import { ehAdmin } from '../core/usuarios.js';
+import { criarCampo } from '../ui/formularios.js';
+import {
+  painel as uiPainel,
+  botao,
+  caixaArredondada,
+  campoTexto,
+  medirFluxo,
+  texto as uiTexto,
+  titulo as uiTitulo,
+  aoTeclar,
+  restaurarFoco,
+  FONTE_UI,
+} from '../ui/comuns.js';
+import {
+  CAMPOS_ITEM,
+  CAMPOS_CLASSE,
+  CAMPOS_MONSTRO,
+  CAMPOS_RECEITA,
+  CAMPOS_REINO,
+  CAMPOS_CONQUISTA,
+  CAMPOS_TALENTO,
+  RESUMO,
+  serializadores,
+} from '../dados/schemaAdmin.js';
+
+// =====================================================================
+// Abas
+//
+// `campos` = esquema (vem de dados/schemaAdmin.js)
+// `opcoes` = comportamento especifico do registro (busca, filtro, extras)
+// =====================================================================
 
 const ABAS = [
-  { id: 'itens', label: 'Itens' },
-  { id: 'classes', label: 'Classes' },
-  { id: 'talentos', label: 'Talentos' },
-  { id: 'monstros', label: 'Monstros' },
-  { id: 'receitas', label: 'Receitas' },
-  { id: 'reinos', label: 'Reinos' },
-  { id: 'conquistas', label: 'Conquistas' },
+  {
+    id: 'itens',
+    label: 'Itens',
+    repo: repoItens,
+    cache: 'itens',
+    campos: CAMPOS_ITEM,
+    resumo: RESUMO.itens,
+    buscar: true,
+    pastaUpload: 'itens',
+  },
+  {
+    id: 'classes',
+    label: 'Classes',
+    repo: repoClasses,
+    cache: 'classes',
+    campos: CAMPOS_CLASSE,
+    resumo: RESUMO.classes,
+    buscar: true,
+    pastaUpload: 'classes',
+  },
+  {
+    id: 'talentos',
+    label: 'Talentos',
+    repo: repoSkills,
+    cache: 'talentos',
+    campos: CAMPOS_TALENTO,
+    resumo: RESUMO.talentos,
+    buscar: true,
+    filtroClasse: true,
+    pastaUpload: 'talentos',
+  },
+  {
+    id: 'monstros',
+    label: 'Monstros',
+    repo: repoMonstros,
+    cache: 'monstros',
+    campos: CAMPOS_MONSTRO,
+    resumo: RESUMO.monstros,
+    buscar: true,
+    pastaUpload: 'monstros',
+  },
+  {
+    id: 'receitas',
+    label: 'Receitas',
+    repo: repoRecipes,
+    cache: 'receitas',
+    campos: CAMPOS_RECEITA,
+    resumo: RESUMO.receitas,
+    pastaUpload: 'receitas',
+  },
+  {
+    id: 'reinos',
+    label: 'Reinos',
+    repo: repoWorldTemplates,
+    cache: 'reinos',
+    campos: CAMPOS_REINO,
+    resumo: RESUMO.reinos,
+    pastaUpload: 'reinos',
+  },
+  {
+    id: 'conquistas',
+    label: 'Conquistas',
+    repo: repoAchievements,
+    cache: 'conquistas',
+    campos: CAMPOS_CONQUISTA,
+    resumo: RESUMO.conquistas,
+    pastaUpload: 'conquistas',
+  },
+  { id: 'portais', label: 'Portais', especial: 'portais' },
+  { id: 'jogadores', label: 'Jogadores', especial: 'jogadores' },
 ];
+
+const LARGURA_LISTA = 320;
+const TOPO = 116;
+const GAP = 6;
 
 export class AdminScene extends Phaser.Scene {
   constructor() {
@@ -38,121 +130,223 @@ export class AdminScene extends Phaser.Scene {
 
   init(dados) {
     this.uid = dados?.uid ?? null;
+    this.meuNome = dados?.nome ?? null;
   }
 
   create() {
     this.abaAtual = 'itens';
     this.caches = {};
-    this.caminhoVolta = [];
+    this.selecionado = null; // { aba, item }
+    this.filtroClasse = null;
+    this.busca = '';
+    this.camposVivos = [];
 
     this.cameras.main.setBackgroundColor('#0d0a07');
+    this.raiz = this.add.container(0, 0).setDepth(1);
+    this.camada = this.add.container(0, 0).setDepth(20);
 
-    this.textoTitulo = this.add
-      .text(20, 16, 'ADMINISTRAÇÃO DO IMPÉRIUM', {
-        fontFamily: 'Georgia, serif',
-        fontSize: '20px',
-        color: OURO,
-      })
-      .setDepth(10);
-
-    this.textoStatus = this.add
-      .text(20, 44, '', {
-        fontFamily: 'system-ui, sans-serif',
-        fontSize: '12px',
-        color: PERGAMINHO,
-      })
-      .setAlpha(0.8)
-      .setDepth(10);
-
-    this.areaAbas = this.add.container(0, 0).setDepth(20);
-    this.areaConteudo = this.add.container(0, 0).setDepth(5);
-
+    this.montarCabecalho();
     this.montarAbas();
+    this.redimensionar(true);
 
-    const fechar = this.add
-      .text(this.scale.width - 20, 16, 'Fechar  [F2]', {
-        fontFamily: 'system-ui, sans-serif',
-        fontSize: '13px',
-        color: '#e0b64a',
-      })
-      .setOrigin(1, 0)
-      .setInteractive({ useHandCursor: true })
-      .setDepth(10);
-    fechar.on('pointerover', () => fechar.setColor(OURO));
-    fechar.on('pointerout', () => fechar.setColor('#e0b64a'));
-    fechar.on('pointerdown', () => this.fechar());
+    const aoRedimensionar = () => this.redimensionar();
+    this.scale.on(Phaser.Scale.Events.RESIZE, aoRedimensionar);
+    this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
+      this.scale.off(Phaser.Scale.Events.RESIZE, aoRedimensionar);
+      this.limparCamada();
+    });
 
-    this.input.keyboard.on('keydown-F2', () => this.fechar());
-    this.input.keyboard.on('keydown-ESC', () => {
-      if (this.caminhoVolta.length) {
-        this.caminhoVolta.pop();
-        this.desenhar();
+    aoTeclar(this, 'F2', () => this.fechar());
+    aoTeclar(this, 'ESC', () => {
+      if (this.selecionado) {
+        this.selecionado = null;
+        this.redesenhar();
       } else {
         this.fechar();
       }
     });
-
-    this.escalaHandler = () => {
-      this.textoTitulo.setPosition(20, 16);
-      this.textoStatus.setPosition(20, 44);
-      fechar.setPosition(this.scale.width - 20, 16);
-      this.montarAbas();
-      this.desenhar();
-    };
-    this.scale.on(Phaser.Scale.Events.RESIZE, this.escalaHandler);
-
-    this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
-      this.scale.off(Phaser.Scale.Events.RESIZE, this.escalaHandler);
-    });
-
-    this.desenhar();
   }
 
-  // ---------- estrutura ----------
+  // ---------- chrome ----------
+
+  montarCabecalho() {
+    this.cabecalho = this.add.container(0, 0);
+    this.raiz.add(this.cabecalho);
+  }
 
   montarAbas() {
-    this.areaAbas.removeAll(true);
-    let x = 20;
+    this.abasContainer = this.add.container(0, 0);
+    this.raiz.add(this.abasContainer);
+  }
 
-    for (const aba of ABAS) {
-      const ativa = aba.id === this.abaAtual;
-      const largura = aba.label.length * 8 + 22;
+  /**
+   * Refaz o layout inteiro para o tamanho atual da janela.
+   *
+   * Rebuild completo em vez de reposicionar: o conteudo depende da largura
+   * (colunas do formulario, largura da lista), e recalcular cada posicao a mao
+   * era exatamente o que mantinha o painel torto em resolucoes diferentes.
+   */
+  redimensionar(primeiraVez = false) {
+    const { width, height } = this.scale;
+    this.limparCamada();
 
-      const fundo = this.add
-        .rectangle(x, 72, largura, 28, ativa ? 0xd4af6a : 0x241c14)
-        .setOrigin(0, 0)
-        .setStrokeStyle(1, ativa ? 0x8a6a2f : 0x3a2c20)
-        .setInteractive({ useHandCursor: true });
+    this.cabecalho.removeAll(true);
+    this.abasContainer.removeAll(true);
 
-      const rotulo = this.add
-        .text(x + largura / 2, 86, aba.label, {
-          fontFamily: 'system-ui, sans-serif',
+    // Fundo e moldura.
+    this.cabecalho.add(this.add.rectangle(width / 2, height / 2, width, height, 0x0d0a07, 0.99));
+    this.cabecalho.add(
+      uiPainel(this, 12, 12, Math.max(320, width - 24), Math.max(200, height - 24), 0x14100c, 0.99),
+    );
+
+    this.cabecalho.add(uiTitulo(this, 32, 28, 'ADMINISTRAÇÃO DO IMPÉRIUM', '20px').setOrigin(0, 0));
+
+    const fechar = this.add
+      .text(width - 32, 30, 'Fechar  [F2]', { ...FONTE_UI, fontSize: '12px', color: OURO })
+      .setOrigin(1, 0)
+      .setInteractive({ useHandCursor: true });
+    fechar.on('pointerover', () => fechar.setColor('#fff'));
+    fechar.on('pointerout', () => fechar.setColor(OURO));
+    fechar.on('pointerdown', () => this.fechar());
+    this.cabecalho.add(fechar);
+
+    this.barraStatus = this.add
+      .text(32, height - 32, '', { ...FONTE_UI, fontSize: '12px', color: OURO })
+      .setOrigin(0, 0.5);
+    this.cabecalho.add(this.barraStatus);
+
+    // Abas em fluxo (quebra automatica quando nao cabem).
+    this.abas = ABAS;
+    const larguras = ABAS.map((a) => Math.max(72, a.label.length * 7 + 26));
+    const util = Math.max(200, width - 64);
+    const linhas = medirFluxo(util, larguras, GAP);
+    const alturaFaixa = 4 + linhas * 34;
+
+    let cx = 32;
+    let cy = 62;
+    ABAS.forEach((aba, i) => {
+      const w = larguras[i];
+      if (i > 0 && cx + w > 32 + util) {
+        cx = 32;
+        cy += 34;
+      }
+      this.abasContainer.add(this.desenharAba(aba, cx, cy, w));
+      cx += w + GAP;
+    });
+
+    this.linhaLista = LARGURA_LISTA;
+    this.alturaLista = Math.max(180, height - TOPO - 56);
+    this.redesenhar();
+
+    if (!primeiraVez) this.status('');
+  }
+
+  desenharAba(aba, x, y, largura) {
+    const ativo = aba.id === this.abaAtual;
+    const c = this.add.container(x, y);
+    const h = 30;
+    const cx = largura / 2;
+
+    const fundo = caixaArredondada(this, cx, h / 2, largura, h, {
+      raio: 8,
+      preenchimento: ativo ? 0xd4af6a : 0x241c14,
+      borda: ativo ? 0x8a6a2f : 0x3a2c20,
+      larguraBorda: 1,
+      origem: [0.5, 0.5],
+    });
+
+    const zone = this.add
+      .rectangle(0, h / 2, largura, h, 0xffffff, 0)
+      .setOrigin(0, 0)
+      .setInteractive({ useHandCursor: true });
+    c.add(zone);
+
+    c.add(
+      this.add
+        .text(cx, h / 2, aba.label, {
+          ...FONTE_UI,
           fontSize: '12px',
-          color: ativa ? '#14100c' : PERGAMINHO,
+          color: ativo ? '#14100c' : PERGAMINHO,
         })
-        .setOrigin(0.5);
+        .setOrigin(0.5),
+    );
 
-      fundo.on('pointerdown', () => {
-        this.abaAtual = aba.id;
-        this.caminhoVolta = [];
-        this.montarAbas();
-        this.desenhar();
-      });
+    zone.on('pointerover', () => {
+      if (ativo) return;
+      this.repintar(c, cx, h, largura, 0x3a2c20, 0x8a6a2f);
+    });
+    zone.on('pointerout', () => {
+      if (ativo) return;
+      this.repintar(c, cx, h, largura, 0x241c14, 0x3a2c20);
+    });
+    zone.on('pointerdown', () => {
+      this.abaAtual = aba.id;
+      this.selecionado = null;
+      this.busca = '';
+      this.redimensionar();
+    });
 
-      this.areaAbas.add([fundo, rotulo]);
-      x += largura + 6;
+    return c;
+  }
+
+  repintar(container, cx, cy, w, h, corPreench, corBorda) {
+    const g = container.list.find((o) => o.largura !== undefined);
+    if (!g) return;
+    g.caixa.clear();
+    g.caixa.fillStyle(corPreench, 1);
+    g.caixa.fillRoundedRect(-w / 2, -h / 2, w, h, 8);
+    g.caixa.lineStyle(1, corBorda, 1);
+    g.caixa.strokeRoundedRect(-w / 2, -h / 2, w, h, 8);
+  }
+
+  // ---------- ciclo de desenho ----------
+
+  limparCamada() {
+    for (const campo of this.camposVivos ?? []) {
+      try {
+        campo.destruir();
+      } catch {
+        /* o DOM ja pode ter sumido */
+      }
+    }
+    this.camposVivos = [];
+    this.camada?.removeAll(true);
+  }
+
+  async redesenhar() {
+    const geracao = (this.geracao = (this.geracao ?? 0) + 1);
+
+    // Guarda o foco e o cursor ANTES de destruir os campos, para devolver
+    // depois. Sem isto, filtrar a lista com duas letras jogava o teclado fora.
+    const foco = this._foco;
+    this.limparCamada();
+
+    const aba = this.abas.find((a) => a.id === this.abaAtual) ?? ABAS[0];
+    this.aba = aba;
+
+    if (aba.especial === 'portais') await this.desenharPortais(geracao);
+    else if (aba.especial === 'jogadores') await this.desenharJogadores(geracao);
+    else await this.desenharCatalogo(geracao);
+
+    if (this.geracao === geracao && foco?.chave) {
+      restaurarFoco(this, foco, this.camposVivos);
     }
   }
 
-  limparConteudo() {
-    this.areaConteudo.removeAll(true);
+  /** Sair cedo se o jogador redimensionou/clicou enquanto carregava. */
+  valido(geracao) {
+    return geracao === this.geracao;
   }
 
-  // ---------- carregamento com cache ----------
+  status(msg, cor = OURO) {
+    this.barraStatus?.setText(msg ?? '').setColor(cor);
+  }
+
+  // ---------- carga com cache ----------
 
   async carregar(chave, fn) {
     if (this.caches[chave]) return this.caches[chave];
-    this.status('Carregando...');
+    this.status('Carregando…');
     try {
       const dados = await fn();
       this.caches[chave] = dados;
@@ -160,865 +354,808 @@ export class AdminScene extends Phaser.Scene {
       return dados;
     } catch (erro) {
       console.error(erro);
-      this.status('Erro ao carregar: ' + (erro?.message ?? erro));
+      this.status('Erro ao carregar: ' + (erro?.message ?? erro), '#e0806a');
       return [];
     }
   }
 
-  status(msg) {
-    this.textoStatus.setText(msg ?? '');
+  invalidarCache() {
+    for (const k of Object.keys(this.caches)) delete this.caches[k];
   }
 
-  // ---------- redesenho ----------
+  // ---------- aba genérica de catálogo ----------
 
-  async desenhar() {
-    this.limparConteudo();
-    const topo = 112;
+  async desenharCatalogo(geracao) {
+    const aba = this.aba;
+    const itens = await this.carregar(aba.cache, () => aba.repo.listar());
+    if (!this.valido(geracao)) return;
 
-    switch (this.abaAtual) {
-      case 'itens':
-        return this.painelLista({
-          topo,
-          titulo: 'ITENS & BLOCOS',
-          repo: repoItens,
-          ordemPor: 'nome',
-          descricao: (d) =>
-            `${d.tipo ?? '?'} • uso: ${(d.uso ?? []).join(', ') || '—'} • ${d.raridade ?? 'comum'}` +
-            (d.slotsUpgrade ? ` • +${d.slotsUpgrade} orbe(s)` : ''),
-          campos: [
-            { chave: 'nome', rotulo: 'Nome', tipo: 'texto', obrigatorio: true },
-            {
-              chave: 'tipo',
-              rotulo: 'Tipo',
-              tipo: 'select',
-              opcoes: Object.values(TIPOS_ITEM),
-            },
-            {
-              chave: 'uso',
-              rotulo: 'Usos',
-              tipo: 'multiselec',
-              opcoes: Object.values(USOS_ITEM),
-              dica: 'Extração = veio do mundo; Transformação = insumo de receita; Utilização = uso direto; Estrutura = construção.',
-            },
-            {
-              chave: 'raridade',
-              rotulo: 'Raridade',
-              tipo: 'select',
-              opcoes: Object.values(RARIDADES),
-            },
-            { chave: 'stackMax', rotulo: 'Máx por pilha', tipo: 'numero' },
-            { chave: 'valor', rotulo: 'Valor (ouro)', tipo: 'numero' },
-            { chave: 'nivelMin', rotulo: 'Nível mínimo', tipo: 'numero' },
-            { chave: 'slotsUpgrade', rotulo: 'Slots de Orbe', tipo: 'numero' },
-            { chave: 'nivelMaxUpgrade', rotulo: 'Nível máx. upgrade', tipo: 'numero' },
-            {
-              chave: 'tiposOrbeAceitos',
-              rotulo: 'Orbes aceitos',
-              tipo: 'multiselec',
-              opcoes: Object.keys(FAIXAS_NIVEL_ORBE),
-            },
-            { chave: 'descricao', rotulo: 'Descrição', tipo: 'texto' },
-          ],
-          extra: (form, dados) => {
-            const id = dados?.id ?? crypto.randomUUID();
-            return {
-              ...form,
-              slug: (form.slug || form.nome || id)
-                .toString()
-                .toLowerCase()
-                .normalize('NFD')
-                .replace(/[\u0300-\u036f]/g, '')
-                .replace(/[^a-z0-9]+/g, '_')
-                .replace(/^_|_$/g, ''),
-            };
-          },
-        });
+    // Field options that depend on OTHER catalogs.
+    const [itensCat, monstrosCat, classesCat, talentosCat] = await Promise.all([
+      this.carregar('itens', () => repoItens.listar()),
+      this.carregar('monstros', () => repoMonstros.listar()),
+      this.carregar('classes', () => repoClasses.listar()),
+      this.carregar('talentosCat', () => repoSkills.listar()),
+    ]);
+    if (!this.valido(geracao)) return;
 
-      case 'classes':
-        return this.painelLista({
-          topo,
-          titulo: 'CLASSES & VOCAÇÕES',
-          repo: repoClasses,
-          ordemPor: 'nome',
-          descricao: (d) =>
-            `raiz ${d.nivelMin ?? 1}+ • poder ${d.poderBase ?? 40} • vida ${d.vidaBase ?? 100}` +
-            (d.descricao ? '' : ' (sem descrição)'),
-          campos: [
-            { chave: 'nome', rotulo: 'Nome da Vocação', tipo: 'texto', obrigatorio: true },
-            { chave: 'descricao', rotulo: 'Descrição', tipo: 'texto' },
-            { chave: 'nivelMin', rotulo: 'Nível mínimo', tipo: 'numero' },
-            { chave: 'vidaBase', rotulo: 'Vida base', tipo: 'numero' },
-            { chave: 'poderBase', rotulo: 'Poder base', tipo: 'numero' },
-            { chave: 'fis', rotulo: 'Físico base', tipo: 'numero' },
-            { chave: 'men', rotulo: 'Mental base', tipo: 'numero' },
-            { chave: 'soc', rotulo: 'Social base', tipo: 'numero' },
-            { chave: 'cor', rotulo: 'Cor (hex)', tipo: 'texto' },
-          ],
-          extra: (form, dados) => {
-            const id = dados?.id ?? crypto.randomUUID();
-            return {
-              ...form,
-              slug: (form.slug || form.nome || id)
-                .toString()
-                .toLowerCase()
-                .normalize('NFD')
-                .replace(/[\u0300-\u036f]/g, '')
-                .replace(/[^a-z0-9]+/g, '_')
-                .replace(/^_|_$/g, ''),
-            };
-          },
-        });
-
-      case 'talentos':
-        return this.painelTalentos({ topo });
-
-      case 'monstros':
-        return this.painelLista({
-          topo,
-          titulo: 'MONSTROS',
-          repo: repoMonstros,
-          ordemPor: 'nome',
-          descricao: (d) =>
-            `nível ${d.faixaMin ?? 1}–${d.faixaMax ?? 5} • vida ${d.vidaMax ?? 50} • ${d.comportamento ?? 'errante'}`,
-          campos: [
-            { chave: 'nome', rotulo: 'Nome', tipo: 'texto', obrigatorio: true },
-            { chave: 'tipo', rotulo: 'Tipo', tipo: 'texto' },
-            { chave: 'rarefator', rotulo: 'Raridade', tipo: 'texto' },
-            { chave: 'faixaMin', rotulo: 'Nível mín.', tipo: 'numero' },
-            { chave: 'faixaMax', rotulo: 'Nível máx.', tipo: 'numero' },
-            { chave: 'vidaMax', rotulo: 'Vida máx.', tipo: 'numero' },
-            { chave: 'poderMax', rotulo: 'Poder máx.', tipo: 'numero' },
-            { chave: 'fis', rotulo: 'Físico', tipo: 'numero' },
-            { chave: 'men', rotulo: 'Mental', tipo: 'numero' },
-            { chave: 'soc', rotulo: 'Social', tipo: 'numero' },
-            { chave: 'danoBase', rotulo: 'Dano base', tipo: 'numero' },
-            { chave: 'defesa', rotulo: 'Defesa', tipo: 'numero' },
-            { chave: 'alcance', rotulo: 'Alcance', tipo: 'numero' },
-            { chave: 'velocidade', rotulo: 'Velocidade', tipo: 'numero' },
-            {
-              chave: 'comportamento',
-              rotulo: 'Comportamento',
-              tipo: 'select',
-              opcoes: Object.values(COMPORTAMENTOS_MONSTRO),
-            },
-            { chave: 'xpRecompensa', rotulo: 'XP de recompensa', tipo: 'numero' },
-            {
-              chave: 'loot',
-              rotulo: 'Loot (id:chance:qtd | ...)',
-              tipo: 'texto',
-              dica: 'Ex.: pedra:80:2, madeira:60:3',
-              parse: (v) =>
-                String(v ?? '')
-                  .split(',')
-                  .map((p) => p.trim())
-                  .filter(Boolean)
-                  .map((p) => {
-                    const [itemId, chance, qtd] = p.split(':');
-                    return {
-                      itemId: (itemId ?? '').trim(),
-                      chance: Number(chance) || 0,
-                      qtdMin: 1,
-                      qtdMax: Number(qtd) || 1,
-                    };
-                  })
-                  .filter((l) => l.itemId),
-            },
-          ],
-          extra: (form, dados) => {
-            const id = dados?.id ?? crypto.randomUUID();
-            return {
-              ...form,
-              slug: (form.slug || form.nome || id)
-                .toString()
-                .toLowerCase()
-                .normalize('NFD')
-                .replace(/[\u0300-\u036f]/g, '')
-                .replace(/[^a-z0-9]+/g, '_')
-                .replace(/^_|_$/g, ''),
-            };
-          },
-        });
-
-      case 'receitas':
-        return this.painelReceitas({ topo });
-
-      case 'reinos':
-        return this.painelReinos({ topo });
-
-      case 'conquistas':
-        return this.painelConquistas({ topo });
-
-      default:
-        return undefined;
+    // Talent filter
+    if (aba.filtroClasse) {
+      const opcoes = classesCat.map((c) => ({ valor: c.id, rotulo: c.nome ?? c.id }));
+      if (!this.filtroClasse || !opcoes.some((o) => o.valor === this.filtroClasse)) {
+        this.filtroClasse = opcoes[0]?.valor ?? null;
+      }
     }
-  }
 
-  // ---------- painel genérico de lista + formulário ----------
+    const campos = this.camposComOpcoes(aba.campos, { itensCat, monstrosCat, classesCat, talentosCat });
 
-  async painelLista({ topo, titulo, repo, ordemPor, descricao, campos, extra }) {
-    const itens = await this.carregar(ordemPor, () => repo.listar());
+    // ----- left column -----
+    let y = TOPO;
+    this.camada.add(uiTitulo(this, 32, y, `${aba.label.toUpperCase()}`, '15px').setOrigin(0, 0));
+    y += 26;
 
-    this.areaConteudo.add(
-      this.add.text(20, topo, titulo, {
-        fontFamily: 'Georgia, serif',
-        fontSize: '16px',
-        color: OURO,
-      }),
-    );
+    if (aba.buscar) {
+      this.camada.add(
+        uiTexto(this, 32, y, 'Buscar', { fontSize: '11px' }).setOrigin(0, 0).setAlpha(0.8),
+      );
+      y += 15;
+      const campo = campoTexto(this, 32, y, this.linhaLista - 24, 28, this.busca, {
+        placeholder: 'nome do registro…',
+        maxLength: 60,
+        chave: 'busca',
+        // Filtra a lista enquanto a pessoa digita. Com atraso, senão um redesenho
+        // por tecla derruba o campo que está sendo usado e a busca morre na
+        // segunda letra.
+        aoMudar: (v) => {
+          if (v === this.busca) return;
+          this.busca = v;
+          clearTimeout(this.timerBusca);
+          this.timerBusca = setTimeout(() => this.redesenhar(), 160);
+        },
+        aoConfirmar: (v) => {
+          clearTimeout(this.timerBusca);
+          if (v !== this.busca) {
+            this.busca = v;
+            this.redesenhar();
+          }
+        },
+      });
+      this.camposVivos.push(campo);
+      this.camada.add(campo.box);
+      y += 38;
+    }
 
-    if (!itens?.length) {
-      this.areaConteudo.add(
-        this.add.text(20, topo + 34, 'Nenhum registro ainda. Crie o primeiro ao lado.', {
-          fontFamily: 'system-ui, sans-serif',
-          fontSize: '13px',
-          color: PERGAMINHO,
-        }).setAlpha(0.7),
+    if (aba.filtroClasse) {
+      const sel = criarCampo(this, {
+        rotulo: 'Filtrar por classe',
+        x: 32,
+        y,
+        largura: this.linhaLista - 24,
+        tipo: 'select',
+        valor: this.filtroClasse,
+        opcoes: classesCat.map((c) => ({ valor: c.id, rotulo: c.nome ?? c.id })),
+        aoMudar: (v) => {
+          this.filtroClasse = v;
+          this.redesenhar();
+        },
+      });
+      this.camposVivos.push(sel);
+      this.camada.add(sel.container);
+      y += sel.altura + 6;
+    }
+
+    const filtrados = this.filtrar(itens, aba);
+    const listaVisiveis = filtrados.slice(0, 200);
+
+    const altLista = this.alturaLista - (y - TOPO) - 44;
+    const painelLista = uiPainel(this, 24, y - 6, this.linhaLista - 8, Math.max(60, altLista), 0x100c08, 0.9);
+    this.camada.add(painelLista);
+
+    if (!listaVisiveis.length) {
+      this.camada.add(
+        uiTexto(this, 40, y + 10, 'Nenhum registro encontrado.', { fontSize: '12px' })
+          .setOrigin(0, 0)
+          .setAlpha(0.7),
       );
     }
 
-    // --------- lista ---------
-    let y = topo + 40;
-    const larguraLista = Math.max(260, this.scale.width * 0.36);
-
-    for (const item of itens) {
-      const linha = this.add.container(20, y);
-      const caixa = this.add.rectangle(0, 0, larguraLista - 14, 40, 0x1d1710).setOrigin(0, 0);
-      const t1 = this.add
-        .text(10, 5, String(item.nome ?? item.id), {
-          fontFamily: 'system-ui, sans-serif',
-          fontSize: '13px',
-          color: OURO,
-        })
-        .setOrigin(0, 0);
-      const t2 = this.add
-        .text(10, 21, String(descricao(item)).slice(0, 60), {
-          fontFamily: 'system-ui, sans-serif',
-          fontSize: '10px',
-          color: PERGAMINHO,
-        })
-        .setOrigin(0, 0)
-        .setAlpha(0.75);
-
-      caixa.setInteractive({ useHandCursor: true });
-      caixa.on('pointerdown', () => {
-        this.caminhoVolta.push({ tipo: 'form', campos, repo, item, extra });
-        this.desenharFormulario(campos, repo, item, extra);
-      });
-
-      const apagar = this.add
-        .text(larguraLista - 26, 20, 'x', {
-          fontFamily: 'system-ui, sans-serif',
-          fontSize: '15px',
-          color: '#c96a5a',
-        })
-        .setOrigin(0.5)
-        .setInteractive({ useHandCursor: true });
-      apagar.on('pointerdown', async (p, x, y2, ev) => {
-        ev.stopPropagation();
-        if (!confirm(`Apagar "${item.nome ?? item.id}"?`)) return;
-        try {
-          await repo.remover(item.id);
-          delete this.caches[ordemPor];
-          this.status('Apagado.');
-          this.desenhar();
-        } catch (e) {
-          this.status('Erro ao apagar: ' + e.message);
-        }
-      });
-
-      linha.add([caixa, t1, t2, apagar]);
-      this.areaConteudo.add(linha);
-      y += 44;
+    let ly = y + 2;
+    const alturaLinha = 44;
+    const visiveisPelaTela = Math.max(1, Math.floor((altLista - 10) / alturaLinha));
+    const inicio = Math.max(0, Math.min(listaVisiveis.length - 1, (this.deslocLista ?? 0)));
+    for (let i = inicio; i < Math.min(listaVisiveis.length, inicio + visiveisPelaTela); i += 1) {
+      ly += this.desenharLinhaLista(listaVisiveis[i], 32, ly, this.linhaLista - 32, aba);
     }
 
-    // --------- botão novo ---------
-    const btnNovo = this.add
-      .text(20, y + 6, '+ Novo registro', {
-        fontFamily: 'system-ui, sans-serif',
-        fontSize: '13px',
-        color: '#8fd18f',
-      })
-      .setInteractive({ useHandCursor: true });
-    btnNovo.on('pointerdown', () => {
-      this.caminhoVolta.push({ tipo: 'novo', campos, repo, item: null, extra });
-      this.desenharFormulario(campos, repo, null, extra);
-    });
-    this.areaConteudo.add(btnNovo);
+    if (listaVisiveis.length > visiveisPelaTela) {
+      const total = listaVisiveis.length;
+      const primeira = inicio + 1;
+      const ultima = Math.min(listaVisiveis.length, inicio + visiveisPelaTela);
+      this.camada.add(
+        uiTexto(this, 32, y + altLista - 16, `${primeira}–${ultima} de ${total}`, {
+          fontSize: '10px',
+          color: OURO,
+        }).setOrigin(0, 0),
+      );
+      const maxDesloc = Math.max(0, total - visiveisPelaTela);
+      this.deslocLista = inicio;
+      const setaCima = this.add
+        .text(32 + this.linhaLista - 44, y + 2, '▲', { ...FONTE_UI, fontSize: '10px', color: PERGAMINHO })
+        .setOrigin(0.5)
+        .setAlpha(inicio > 0 ? 1 : 0.25)
+        .setInteractive({ useHandCursor: true });
+      if (inicio > 0) {
+        setaCima.on('pointerdown', () => {
+          this.deslocLista = Math.max(0, this.deslocLista - visiveisPelaTela);
+          this.redesenhar();
+        });
+      }
+      const setaBaixo = this.add
+        .text(32 + this.linhaLista - 44, y + altLista - 22, '▼', { ...FONTE_UI, fontSize: '10px', color: PERGAMINHO })
+        .setOrigin(0.5)
+        .setAlpha(inicio < maxDesloc ? 1 : 0.25)
+        .setInteractive({ useHandCursor: true });
+      if (inicio < maxDesloc) {
+        setaBaixo.on('pointerdown', () => {
+          this.deslocLista = Math.min(maxDesloc, this.deslocLista + visiveisPelaTela);
+          this.redesenhar();
+        });
+      }
+      this.camada.add([setaCima, setaBaixo]);
+    }
 
-    // --------- formulário à direita (se houver) ---------
-    const ultimo = this.caminhoVolta[this.caminhoVolta.length - 1];
-    if (ultimo?.tipo === 'form' || ultimo?.tipo === 'novo') {
-      this.desenharFormulario(ultimo.campos, ultimo.repo, ultimo.item, ultimo.extra);
+    // ----- new record -----
+    const yNovo = y + altLista + 12;
+    const btnNovo = botao(this, 32 + (this.linhaLista - 32) / 2, yNovo, '+ Novo registro', () => {
+      this.selecionado = { aba, item: null };
+      this.deslocLista = 0;
+      this.redesenhar();
+    }, { largura: this.linhaLista - 32, altura: 32, tamanho: '13px' });
+    this.camada.add(btnNovo.caixa);
+
+    // ----- right column: form -----
+    if (this.selecionado?.aba?.id === aba.id) {
+      this.desenharFormulario(campos, aba, this.selecionado.item);
+    } else {
+      this.camada.add(
+        uiTexto(
+          this,
+          this.linhaLista + 40,
+          TOPO + 20,
+          `Escolha um registro na lista ou crie um novo.\n\nTudo o que você preencher aqui aparece no jogo: a descrição vai para a wiki (tecla H), a imagem aparece na ficha do item e no inventário.`,
+          { fontSize: '12px', color: PERGAMINHO, wordWrap: { width: Math.max(200, this.scale.width - this.linhaLista - 90) } },
+        ).setOrigin(0, 0).setAlpha(0.7),
+      );
     }
   }
 
-  desenharFormulario(campos, repo, item, extra) {
-    const x0 = Math.max(320, this.scale.width * 0.4);
-    let y = 112;
-    const camposRef = {};
+  /**
+   * Preenche as opcoes que dependem de OUTROS cadastros.
+   *
+   * Fica aqui (e nao no schema) porque depende de dados carregados: a lista de
+   * blocos possiveis para um talento so existe depois de ler `items`.
+   */
+  camposComOpcoes(campos, ctx) {
+    const { itensCat, monstrosCat, classesCat, talentosCat } = ctx;
 
-    const titulo = item ? `Editar: ${item.nome ?? item.id}` : 'Novo registro';
-    this.areaConteudo.add(
-      this.add.text(x0, y, titulo, {
-        fontFamily: 'Georgia, serif',
-        fontSize: '16px',
+    return campos.map((campo) => {
+      const c = { ...campo };
+      switch (campo.chave) {
+        case 'preRequisitos': {
+          // Só talentos da mesma classe podem ser pré-requisito: exigir um
+          // talento de outra vocação tornaria a árvore impossível de fechar.
+          const daClasse = talentosCat.filter((t) => !this.filtroClasse || t.classeId === this.filtroClasse);
+          c.opcoes = daClasse.map((t) => ({ valor: t.id, rotulo: `${t.nome} (${t.id})` }));
+          c.dica = 'Talentos que precisam estar desbloqueados antes. Vazio = talento raiz.';
+          break;
+        }
+        case 'classeId':
+          c.opcoes = classesCat.map((k) => ({ valor: k.id, rotulo: k.nome ?? k.id }));
+          break;
+        case 'monstrosPossiveis':
+          c.opcoes = monstrosCat.map((m) => ({ valor: m.id, rotulo: `${m.nome} (${m.id})` }));
+          break;
+        case 'extracao':
+          c.opcoes = itensCat
+            .filter((i) => (i.uso ?? []).includes('extracao') || i.tipo === 'bloco')
+            .map((i) => ({ valor: i.id, rotulo: i.nome ?? i.id }));
+          break;
+        default:
+          break;
+      }
+      return c;
+    });
+  }
+
+  filtrar(itens, aba) {
+    let lista = itens ?? [];
+    if (aba.filtroClasse) lista = lista.filter((t) => t.classeId === this.filtroClasse);
+    const termo = String(this.busca ?? '').trim().toLowerCase();
+    if (termo) {
+      lista = lista.filter((i) =>
+        [i.nome, i.id, i.descricao, i.bioma, i.tipo].some((v) =>
+          String(v ?? '').toLowerCase().includes(termo),
+        ),
+      );
+    }
+    return lista;
+  }
+
+  desenharLinhaLista(item, x, y, largura, aba) {
+    const altura = 40;
+    const sel = this.selecionado?.item?.id === item.id && this.selecionado?.aba?.id === aba.id;
+
+    const caixa = caixaArredondada(this, x, y, largura, altura, {
+      raio: 8,
+      preenchimento: sel ? 0x2f2418 : 0x1d1710,
+      borda: sel ? OURO : 0x2e241a,
+      larguraBorda: sel ? 2 : 1,
+      origem: [0, 0],
+    });
+
+    // thumbnail
+    const img = this.add.image(x + 22, y + altura / 2, 'painel').setDisplaySize(28, 28);
+    if (item.imagem) {
+      this.load.image(`thumb_${item.id}`, item.imagem);
+      this.load.once(`filecomplete-thumb_${item.id}`, () => {
+        if (img.scene) img.setTexture(`thumb_${item.id}`);
+      });
+      this.load.start();
+    }
+
+    const nome = this.add
+      .text(x + 42, y + 6, String(item.nome ?? item.id).slice(0, 26), {
+        ...FONTE_UI,
+        fontSize: '12px',
         color: OURO,
-      }),
+      })
+      .setOrigin(0, 0);
+    const det = this.add
+      .text(x + 42, y + 23, String(aba.resumo?.(item) ?? '').slice(0, 34), {
+        ...FONTE_UI,
+        fontSize: '9px',
+        color: PERGAMINHO,
+      })
+      .setOrigin(0, 0)
+      .setAlpha(0.7);
+
+    const zone = this.add
+      .rectangle(x, y, largura, altura, 0xffffff, 0)
+      .setOrigin(0, 0)
+      .setInteractive({ useHandCursor: true });
+
+    zone.on('pointerover', () => {
+      caixa.caixa.clear();
+      caixa.caixa.fillStyle(0x2a2018, 1);
+      caixa.caixa.fillRoundedRect(0, 0, largura, altura, 8);
+      caixa.caixa.lineStyle(1, OURO, 1);
+      caixa.caixa.strokeRoundedRect(0, 0, largura, altura, 8);
+    });
+    zone.on('pointerout', () => {
+      caixa.caixa.clear();
+      caixa.caixa.fillStyle(sel ? 0x2f2418 : 0x1d1710, 1);
+      caixa.caixa.fillRoundedRect(0, 0, largura, altura, 8);
+      caixa.caixa.lineStyle(sel ? 2 : 1, sel ? OURO : 0x2e241a, 1);
+      caixa.caixa.strokeRoundedRect(0, 0, largura, altura, 8);
+    });
+    zone.on('pointerdown', () => {
+      this.selecionado = { aba, item };
+      this.redesenhar();
+    });
+
+    const apagar = this.add
+      .text(x + largura - 14, y + altura / 2, '✕', { ...FONTE_UI, fontSize: '13px', color: '#c96a5a' })
+      .setOrigin(0.5)
+      .setInteractive({ useHandCursor: true });
+    apagar.on('pointerover', () => apagar.setColor('#ff9a8a'));
+    apagar.on('pointerout', () => apagar.setColor('#c96a5a'));
+    apagar.on('pointerdown', () => this.confirmarApagar(aba, item));
+
+    this.camada.add([caixa, img, nome, det, zone, apagar]);
+    return altura + 4;
+  }
+
+  /**
+   * Confirmação de exclusão.
+   *
+   * Antes usava `window.confirm`, que o navegador pode bloquear e que nunca
+   * aparece em tela cheia dentro do canvas. Um modal próprio também permite
+   * avisar o QUE será perdido — apagar um item que 12 receitas usam não é a
+   * mesma coisa que apagar um registro órfão.
+   */
+  confirmarApagar(aba, item) {
+    const nome = String(item.nome ?? item.id);
+    const aviso = this._avisarDependencias(aba.id, item.id);
+
+    const largura = Math.min(420, this.scale.width - 80);
+    const altura = 190 + (aviso ? 46 : 0);
+    const x = (this.scale.width - largura) / 2;
+    const y = (this.scale.height - altura) / 2;
+
+    // Acima de `camada` (depth 20): sem isso o modal aparece ATRÁS do painel.
+    const MODAL_DEPTH = 80000;
+    const fundo = this.add
+      .rectangle(this.scale.width / 2, this.scale.height / 2, this.scale.width, this.scale.height, 0x000000, 0.6)
+      .setOrigin(0.5)
+      .setInteractive()
+      .setDepth(MODAL_DEPTH);
+    const modal = uiPainel(this, x, y, largura, altura, 0x1a140e, 1).setDepth(MODAL_DEPTH + 1);
+
+    const cx = x + largura / 2;
+    const t1 = uiTitulo(this, cx, y + 22, 'Apagar registro?', '16px').setOrigin(0.5, 0).setDepth(MODAL_DEPTH + 2);
+    const t2 = uiTexto(this, cx, y + 52, nome, { fontSize: '13px', color: OURO, align: 'center' })
+      .setOrigin(0.5, 0)
+      .setDepth(MODAL_DEPTH + 2);
+    const t3 = uiTexto(
+      this,
+      cx,
+      y + 78,
+      aviso ? `Aviso: ${aviso}` : 'Esta ação não pode ser desfeita.',
+      {
+        fontSize: '11px',
+        color: aviso ? '#e0a05a' : PERGAMINHO,
+        align: 'center',
+        wordWrap: { width: largura - 48 },
+      },
+    )
+      .setOrigin(0.5, 0)
+      .setDepth(MODAL_DEPTH + 2);
+
+    const btnSim = botao(this, cx - 90, y + altura - 34, 'Apagar', async () => {
+      fechar();
+      await this.apagarRegistro(aba, item);
+    }, { largura: 140, altura: 32, cor: 0x7a2f2a, corHover: 0x9a3a33, corTexto: '#ffe6e0' });
+
+    const btnNao = botao(this, cx + 90, y + altura - 34, 'Cancelar', fechar, {
+      largura: 140,
+      altura: 32,
+      cor: 0x3a2c20,
+      corHover: 0x4a3828,
+      corTexto: PERGAMINHO,
+    });
+
+    btnSim.caixa.setDepth(MODAL_DEPTH + 2);
+    btnNao.caixa.setDepth(MODAL_DEPTH + 2);
+
+    const fechar = () => {
+      fundo.destroy();
+      modal.destroy(true);
+      t1.destroy();
+      t2.destroy();
+      t3.destroy();
+      btnSim.caixa.destroy(true);
+      btnNao.caixa.destroy(true);
+      this.status('');
+    };
+  }
+
+  /** Monta o aviso de dependências (o que para de funcionar ao apagar). */
+  _avisarDependencias(abaId, id) {
+    const c = this.caches;
+    const conta = (lista, idChave) => (lista ?? []).filter((x) => (x[idChave] ?? [])?.includes(id)).length;
+    switch (abaId) {
+      case 'itens': {
+        const receitas = c.receitas ?? [];
+        const emReceita = conta(receitas, 'insumos') + conta(receitas, 'saida');
+        const emLoot =
+          conta(c.monstros ?? [], 'loot') +
+          conta(c.reinos ?? [], 'lootGlobal') +
+          (c.receitas ?? []).filter((r) => (r.saida ?? []).some((s) => s.itemId === id)).length;
+        const partes = [];
+        if (emReceita) partes.push(`${emReceita} receita(s)`);
+        if (emLoot) partes.push(`${emLoot} tabela(s) de loot`);
+        return partes.length ? `usado em ${partes.join(' e ')}` : '';
+      }
+      case 'talentos': {
+        const dependentes = (c.talentosCat ?? []).filter((t) => (t.preRequisitos ?? []).includes(id)).length;
+        return dependentes ? `${dependentes} talento(s) dependem deste` : '';
+      }
+      case 'monstros': {
+        const em = (c.reinos ?? []).filter((r) => (r.monstrosPossiveis ?? []).includes(id)).length;
+        return em ? `${em} reino(s) usam este monstro` : '';
+      }
+      default:
+        return '';
+    }
+  }
+
+  async apagarRegistro(aba, item) {
+    try {
+      await aba.repo.remover(item.id);
+      this.invalidarCache();
+      if (this.selecionado?.item?.id === item.id) this.selecionado = null;
+      this.status('Apagado.');
+      this.redesenhar();
+    } catch (erro) {
+      this.status('Erro ao apagar: ' + (erro?.message ?? erro), '#e0806a');
+    }
+  }
+
+  // ---------- formulário ----------
+
+  desenharFormulario(campos, aba, item) {
+    const x0 = this.linhaLista + 40;
+    const larguraUtil = Math.max(260, this.scale.width - x0 - 44);
+
+    const titulo = item ? `Editar: ${item.nome ?? item.id}` : `Novo registro em ${aba.label}`;
+    this.camada.add(uiTitulo(this, x0, TOPO, titulo, '15px').setOrigin(0, 0));
+
+    // ID + slug visíveis: é assim que o admin referencia o registro nos campos
+    // de texto livre (insumos, loot, pré-requisitos), então escondê-lo só gera
+    // erro de digitação.
+    const idTexto = item?.id ? `id: ${item.id}` : 'id: gerado ao salvar';
+    this.camada.add(
+      uiTexto(this, x0, TOPO + 24, idTexto, { fontSize: '10px', color: PERGAMINHO })
+        .setOrigin(0, 0)
+        .setAlpha(0.6),
     );
-    y += 30;
+
+    let y = TOPO + 44;
+    const refs = {};
 
     for (const campo of campos) {
-      const rot = this.add.text(x0, y, campo.rotulo + (campo.obrigatorio ? ' *' : ''), {
-        fontFamily: 'system-ui, sans-serif',
-        fontSize: '12px',
-        color: campo.obrigatorio ? '#e0b64a' : PERGAMINHO,
+      if (y > this.scale.height - 90) break;
+
+      const valorBruto = item?.[campo.chave];
+      const valor = this.valorInicial(campo, valorBruto);
+
+      const ctrl = criarCampo(this, {
+        rotulo: campo.rotulo,
+        x: x0,
+        y,
+        largura: Math.min(larguraUtil, campo.tipo === 'area' || campo.tipo === 'imagem' ? 420 : 300),
+        tipo: campo.tipo,
+        valor,
+        opcoes: campo.opcoes ?? [],
+        dica: campo.dica ?? '',
+        obrigatorio: campo.obrigatorio,
+        placeholder: campo.placeholder ?? '',
+        multilinha: campo.tipo === 'area',
+        pastaUpload: campo.pastaUpload ?? aba.pastaUpload ?? 'imagens',
+        // Propaga a chave do esquema para o controle: sem isso, o formulario
+        // nao sabia qual campo era qual, e o botao Salvar nao conseguia
+        // montar o objeto final.
+        chave: campo.chave,
       });
-      this.areaConteudo.add(rot);
-      y += 17;
 
-      const valorAtual = item?.[campo.chave];
-
-      if (campo.tipo === 'select') {
-        const opcoes = campo.opcoes ?? [];
-        const atual = valorAtual ?? opcoes[0];
-        let selecionado = atual;
-        const rotSel = this.add.text(x0 + 14, y, String(selecionado), {
-          fontFamily: 'system-ui, sans-serif',
-          fontSize: '12px',
-          color: OURO,
-        });
-        camposRef[campo.chave] = () => selecionado;
-        const seta = this.add
-          .text(x0 + this.scale.width * 0.32, y, 'v', { fontFamily: 'system-ui, sans-serif', fontSize: '11px', color: PERGAMINHO })
-          .setInteractive({ useHandCursor: true });
-        seta.on('pointerdown', () => {
-          const idx = opcoes.indexOf(selecionado);
-          selecionado = opcoes[(idx + 1) % opcoes.length];
-          rotSel.setText(String(selecionado));
-        });
-        this.areaConteudo.add([rotSel, seta]);
-      } else if (campo.tipo === 'multiselec') {
-        const selecionados = new Set(Array.isArray(valorAtual) ? valorAtual : []);
-        camposRef[campo.chave] = () => Array.from(selecionados);
-        let cx = x0;
-        const cy = y;
-        for (const op of campo.opcoes ?? []) {
-          const at = selecionados.has(op);
-          const chip = this.add
-            .text(cx, cy, (at ? 'x ' : '') + op, {
-              fontFamily: 'system-ui, sans-serif',
-              fontSize: '11px',
-              color: at ? '#14100c' : PERGAMINHO,
-              backgroundColor: at ? '#d4af6a' : '#241c14',
-              padding: { x: 6, y: 3 },
-            })
-            .setInteractive({ useHandCursor: true });
-          chip.on('pointerdown', () => {
-            if (selecionados.has(op)) selecionados.delete(op);
-            else selecionados.add(op);
-            const agora = selecionados.has(op);
-            chip.setText((agora ? 'x ' : '') + op);
-            chip.setColor(agora ? '#14100c' : PERGAMINHO);
-            chip.setBackgroundColor(agora ? '#d4af6a' : '#241c14');
-          });
-          this.areaConteudo.add(chip);
-          cx += chip.width + 6;
-          if (cx > this.scale.width - 120) break;
-        }
-      } else {
-        const box = this.add
-          .rectangle(x0, y, 220, 24, 0x1a140e)
-          .setOrigin(0, 0)
-          .setStrokeStyle(1, 0x3a2c20);
-        this.areaConteudo.add(box);
-
-        const input = this.add
-          .text(x0 + 8, y + 4, campo.tipo === 'texto' && Array.isArray(valorAtual) ? valorAtual.join(', ') : String(valorAtual ?? ''), {
-            fontFamily: 'system-ui, sans-serif',
-            fontSize: '12px',
-            color: valorAtual ? PERGAMINHO : '#5a4a3a',
-          })
-          .setOrigin(0, 0)
-          .setInteractive({ useHandCursor: true });
-
-        camposRef[campo.chave] = () => input.text;
-        this.areaConteudo.add(input);
-
-        box.on('pointerdown', () => this.promptTexto(campo, input));
-        input.on('pointerdown', () => this.promptTexto(campo, input));
-      }
-
-      if (campo.dica) {
-        this.areaConteudo.add(
-          this.add.text(x0, y + 26, campo.dica, {
-            fontFamily: 'system-ui, sans-serif',
-            fontSize: '10px',
-            color: PERGAMINHO,
-          }).setAlpha(0.5),
-        );
-        y += 14;
-      }
-      y += 34;
+      refs[campo.chave] = { ctrl, campo };
+      this.camposVivos.push(ctrl);
+      this.camada.add(ctrl.container);
+      y += ctrl.altura;
     }
 
-    // coletar valores
-    const coletar = () => {
-      const form = {};
-      for (const campo of campos) {
-        let v = camposRef[campo.chave] ? camposRef[campo.chave]() : undefined;
-        if (campo.tipo === 'numero') v = v === '' || v === undefined ? 0 : Number(v);
-        if (campo.parse) v = campo.parse(v);
-        form[campo.chave] = v;
+    // Ações
+    const yAcao = Math.min(y + 8, this.scale.height - 74);
+    const btnSalvar = botao(
+      this,
+      x0 + 90,
+      yAcao,
+      item ? 'Salvar alterações' : 'Criar registro',
+      () => this.salvar(campos, aba, item, refs),
+      { largura: 180, altura: 34, tamanho: '13px' },
+    );
+    this.camada.add(btnSalvar.caixa);
+
+    const btnCancelar = botao(this, x0 + 290, yAcao, 'Cancelar', () => {
+      this.selecionado = null;
+      this.redesenhar();
+    }, { largura: 140, altura: 34, tamanho: '13px', cor: 0x3a2c20, corHover: 0x4a3828, corTexto: PERGAMINHO });
+    this.camada.add(btnCancelar.caixa);
+
+    if (item) {
+      const btnApagar = botao(this, x0 + 450, yAcao, 'Apagar', () => this.confirmarApagar(aba, item), {
+        largura: 120,
+        altura: 34,
+        tamanho: '13px',
+        cor: 0x7a2f2a,
+        corHover: 0x9a3a33,
+        corTexto: '#ffe6e0',
+      });
+      this.camada.add(btnApagar.caixa);
+    }
+  }
+
+  /** Converte o valor gravado no Firestore para o que o campo deve exibir. */
+  valorInicial(campo, bruto) {
+    if (bruto === null || bruto === undefined || bruto === '') {
+      // Defaults sensatos para não obrigar o admin a preencher o óbvio.
+      switch (campo.chave) {
+        case 'tipo':
+          return campo.opcoes?.[0]?.valor ?? null;
+        case 'raridade':
+          return 'comum';
+        case 'uso':
+          return [];
+        default:
+          return campo.tipo === 'numero' ? '' : '';
       }
-      return extra ? extra(form, item) : form;
-    };
+    }
+    const ser = serializadores[campo.chave];
+    if (ser) return ser(bruto);
+    if (campo.tipo === 'multiselec') return Array.isArray(bruto) ? bruto : [bruto];
+    if (campo.tipo === 'select' && typeof bruto === 'string') return bruto;
+    if (campo.tipo === 'area' && typeof bruto === 'object') return JSON.stringify(bruto);
+    return bruto;
+  }
 
-    // salvar
-    const btnSalvar = this.add
-      .text(x0, y + 8, item ? 'Salvar alterações' : 'Criar registro', {
-        fontFamily: 'system-ui, sans-serif',
-        fontSize: '14px',
-        fontStyle: 'bold',
-        color: '#14100c',
-        backgroundColor: '#d4af6a',
-        padding: { x: 14, y: 7 },
-      })
-      .setInteractive({ useHandCursor: true });
+  /**
+   * Le todos os campos do formulario para um objeto plano.
+   *
+   * Campo vazio e DESCARTADO em vez de gravado como `''`: um item que já tinha
+   * `defesa: 12` e que o admin deixe a caixa em branco deve manter 12, não
+   * virar 0. `numero` é a exceção — vazio ali significa zero de fato.
+   */
+  coletar(campos, refs) {
+    const form = {};
+    for (const campo of campos) {
+      const ref = refs[campo.chave];
+      if (!ref) continue;
 
-    btnSalvar.on('pointerdown', async () => {
-      const form = coletar();
-      const falta = campos.find((c) => c.obrigatorio && !String(form[c.chave] ?? '').trim());
-      if (falta) {
-        this.status('Preencha o campo: ' + falta.rotulo);
+      let v = ref.ctrl.obter();
+
+      if (campo.tipo === 'numero') {
+        const limpo = String(v ?? '').trim().replace(',', '.');
+        v = limpo === '' ? 0 : Number(limpo);
+        if (!Number.isFinite(v)) v = 0;
+      }
+      if (campo.parse) v = campo.parse(v);
+
+      const vazio =
+        v === '' ||
+        v === null ||
+        v === undefined ||
+        (Array.isArray(v) && v.length === 0) ||
+        (campo.tipo === 'area' && v === '{}');
+
+      if (vazio) {
+        // Lista/area parseada que virou objeto vazio também não deve ser gravada.
+        if (!(campo.parse && typeof v === 'object' && Object.keys(v).length === 0)) {
+          continue;
+        }
+      }
+      form[campo.chave] = v;
+    }
+    return form;
+  }
+
+  async salvar(campos, aba, item, refs) {
+    const form = this.coletar(campos, refs);
+
+    for (const campo of campos) {
+      if (!campo.obrigatorio) continue;
+      const v = form[campo.chave];
+      const vazio = v === undefined || v === null || v === '' || (Array.isArray(v) && !v.length);
+      if (vazio) {
+        this.status(`Preencha o campo obrigatório: ${campo.rotulo}`, '#e0806a');
         return;
       }
-      try {
-        if (item) {
-          await repo.salvar(item.id, form);
-        } else {
-          await repo.criar(form);
-        }
-        this.caminhoVolta = [];
-        this.status('Salvo.');
-        // invalida cache
-        for (const k of Object.keys(this.caches)) delete this.caches[k];
-        this.desenhar();
-      } catch (e) {
-        console.error(e);
-        this.status('Erro ao salvar: ' + (e?.message ?? e));
+    }
+
+    const dados = this.normalizar(campos, form, item);
+
+    try {
+      if (item) await aba.repo.salvar(item.id, dados);
+      else await aba.repo.criar(dados);
+      this.invalidarCache();
+      this.selecionado = null;
+      this.status('Salvo.');
+      this.redesenhar();
+    } catch (erro) {
+      console.error(erro);
+      this.status('Erro ao salvar: ' + (erro?.message ?? erro), '#e0806a');
+    }
+  }
+
+  /** Ajusta tipos que o Firestore não valida sozinho. */
+  normalizar(campos, form, item) {
+    const out = { ...form };
+    for (const campo of campos) {
+      if (campo.tipo === 'numero' && out[campo.chave] !== undefined) {
+        out[campo.chave] = Number(out[campo.chave]) || 0;
       }
-    });
-    this.areaConteudo.add(btnSalvar);
-
-    // voltar
-    const btnVoltar = this.add
-      .text(x0 + 180, y + 8, 'Voltar', {
-        fontFamily: 'system-ui, sans-serif',
-        fontSize: '13px',
-        color: '#c96a5a',
-      })
-      .setInteractive({ useHandCursor: true });
-    btnVoltar.on('pointerdown', () => {
-      this.caminhoVolta.pop();
-      this.desenhar();
-    });
-    this.areaConteudo.add(btnVoltar);
-  }
-
-  promptTexto(campo, input) {
-    const atual = campo.tipo === 'texto' ? input.text : '';
-    const resp = window.prompt(campo.rotulo, atual);
-    if (resp !== null) input.setText(resp);
-  }
-
-  // ---------- talentos (árvore) ----------
-
-  async painelTalentos({ topo }) {
-    const classes = await this.carregar('classes', () => repoClasses.listar());
-    const talentos = await this.carregar('skills', () => repoSkills.listar());
-
-    this.areaConteudo.add(
-      this.add.text(20, topo, 'ÁRVORE DE TALENTOS', {
-        fontFamily: 'Georgia, serif',
-        fontSize: '16px',
-        color: OURO,
-      }),
-    );
-
-    const x0 = Math.max(320, this.scale.width * 0.4);
-    let y = 112;
-
-    // filtro de classe
-    const rot = this.add.text(x0, y, 'Classe', {
-      fontFamily: 'system-ui, sans-serif',
-      fontSize: '12px',
-      color: PERGAMINHO,
-    });
-    this.areaConteudo.add(rot);
-    y += 18;
-
-    let classeSel = this.filtroClasse ?? classes[0]?.id ?? null;
-    const rotClasse = this.add.text(x0 + 14, y, String(classeSel ?? '—'), {
-      fontFamily: 'system-ui, sans-serif',
-      fontSize: '12px',
-      color: OURO,
-    });
-    const seta = this.add
-      .text(x0 + this.scale.width * 0.32, y, 'v', { fontFamily: 'system-ui, sans-serif', fontSize: '11px', color: PERGAMINHO })
-      .setInteractive({ useHandCursor: true });
-    seta.on('pointerdown', () => {
-      const ids = classes.map((c) => c.id);
-      const idx = ids.indexOf(classeSel);
-      classeSel = ids[(idx + 1) % ids.length];
-      this.filtroClasse = classeSel;
-      rotClasse.setText(String(classeSel));
-    });
-    this.areaConteudo.add([rotClasse, seta]);
-    y += 34;
-
-    // campos de talento
-    const campos = [
-      { chave: 'nome', rotulo: 'Nome do talento', tipo: 'texto', obrigatorio: true },
-      { chave: 'classeId', rotulo: 'Classe (id)', tipo: 'texto' },
-      { chave: 'descricao', rotulo: 'Descrição', tipo: 'texto' },
-      {
-        chave: 'tipo',
-        rotulo: 'Tipo',
-        tipo: 'select',
-        opcoes: Object.values(TIPOS_HABILIDADE),
-      },
-      { chave: 'nivelMin', rotulo: 'Nível mín.', tipo: 'numero' },
-      { chave: 'custoPontos', rotulo: 'Custo em pontos', tipo: 'numero' },
-      { chave: 'custoPoder', rotulo: 'Custo de Poder', tipo: 'numero' },
-      { chave: 'ramo', rotulo: 'Ramo (cor da linha)', tipo: 'texto' },
-      { chave: 'posX', rotulo: 'Posição X na árvore', tipo: 'numero' },
-      { chave: 'posY', rotulo: 'Posição Y na árvore', tipo: 'numero' },
-      {
-        chave: 'preRequisitos',
-        rotulo: 'Pré-requisitos (ids separados por vírgula)',
-        tipo: 'texto',
-        dica: 'Ex.: t1_vigor,t2_fisico',
-        parse: (v) =>
-          String(v ?? '')
-            .split(',')
-            .map((s) => s.trim())
-            .filter(Boolean),
-      },
-      {
-        chave: 'efeitos',
-        rotulo: 'Efeitos (chefe:valor | ...)',
-        tipo: 'texto',
-        dica: 'Ex.: fis:+2,vidaMax:+10',
-        parse: (v) => {
-          const out = {};
-          for (const parte of String(v ?? '').split('|')) {
-            const [k, val] = parte.split(':');
-            if (!k?.trim()) continue;
-            const n = Number(String(val ?? '').replace('+', ''));
-            out[k.trim()] = Number.isFinite(n) ? n : String(val ?? '').trim();
-          }
-          return out;
-        },
-      },
-    ];
-
-    // lista de talentos da classe
-    const daClasse = talentos.filter((t) => t.classeId === classeSel);
-    let ly = topo + 40;
-    for (const t of daClasse) {
-      const linha = this.add.text(20, ly, `${t.nome} [${t.tipo}] • ${t.custoPontos ?? 1}pt`, {
-        fontFamily: 'system-ui, sans-serif',
-        fontSize: '12px',
-        color: PERGAMINHO,
-      })
-        .setInteractive({ useHandCursor: true })
-        .setAlpha(0.85);
-      linha.on('pointerover', () => linha.setColor(OURO));
-      linha.on('pointerout', () => linha.setColor(PERGAMINHO));
-      linha.on('pointerdown', () => {
-        this.caminhoVolta.push({ tipo: 'talento' });
-        this.limparConteudo();
-        this.desenharFormulario(campos, repoSkills, t, (f) => f);
-      });
-      this.areaConteudo.add(linha);
-      ly += 22;
     }
 
-    const btnNovo = this.add
-      .text(20, ly + 8, '+ Novo talento nesta classe', {
-        fontFamily: 'system-ui, sans-serif',
-        fontSize: '13px',
-        color: '#8fd18f',
-      })
-      .setInteractive({ useHandCursor: true });
-    btnNovo.on('pointerdown', () => {
-      this.caminhoVolta.push({ tipo: 'talento' });
-      this.limparConteudo();
-      this.desenharFormulario(
-        campos.map((c) => (c.chave === 'classeId' ? { ...c, valorFixo: classeSel } : c)),
-        repoSkills,
-        null,
-        (f) => ({ ...f, classeId: classeSel }),
+    // A classe do talento vem do FILTRO da lista, não de um campo do
+    // formulário. Sem isto, um talento criado pelo admin nascia sem
+    // `classeId` e não aparecia em árvore nenhuma — o registro existia, o
+    // painel dizia "salvo", e o jogo não mudava.
+    if (this.aba?.filtroClasse) out.classeId = this.filtroClasse;
+
+    // Slug estável: é o que o resto do jogo usa para referenciar o registro em
+    // campos de texto livre. Mantemos o existente ao editar.
+    if (!item && out.nome && !out.slug) {
+      out.slug = slugify(out.nome);
+    }
+    if (item?.id && !item.slug && out.nome) {
+      out.slug = slugify(out.nome);
+    }
+    return out;
+  }
+
+  // ---------- abas especiais: portais ----------
+
+  async desenharPortais(geracao) {
+    const portais = await this.carregar('portais', () => repoPortais.listar());
+    if (!this.valido(geracao)) return;
+
+    this.camada.add(uiTitulo(this, 32, TOPO, 'PORTÕES PUBLICADOS', '15px').setOrigin(0, 0));
+    this.camada.add(
+      uiTexto(
+        this,
+        32,
+        TOPO + 26,
+        'Cada jogador publica aqui o resumo da base que os amigos encontram pelo Portal Arcano. Desmarque para esconder uma base sem apagar o progresso dela.',
+        { fontSize: '11px', wordWrap: { width: this.linhaLista } },
+      )
+        .setOrigin(0, 0)
+        .setAlpha(0.75),
+    );
+
+    let y = TOPO + 72;
+    if (!portais.length) {
+      this.camada.add(
+        uiTexto(this, 32, y, 'Nenhum portal publicado ainda.', { fontSize: '12px' }).setOrigin(0, 0),
       );
-    });
-    this.areaConteudo.add(btnNovo);
-  }
-
-  // ---------- receitas ----------
-
-  async painelReceitas({ topo }) {
-    const itens = await this.carregar('items', () => repoItens.listar());
-    const receitas = await this.carregar('recipes', () => repoRecipes.listar());
-
-    this.areaConteudo.add(
-      this.add.text(20, topo, 'RECETAS & MÁQUINAS', {
-        fontFamily: 'Georgia, serif',
-        fontSize: '16px',
-        color: OURO,
-      }),
-    );
-
-    const x0 = Math.max(320, this.scale.width * 0.4);
-    const campos = [
-      { chave: 'nome', rotulo: 'Nome da receita', tipo: 'texto', obrigatorio: true },
-      { chave: 'descricao', rotulo: 'Descrição', tipo: 'texto' },
-      {
-        chave: 'estacao',
-        rotulo: 'Estação',
-        tipo: 'select',
-        opcoes: Object.values(ESTAÇÕES),
-      },
-      {
-        chave: 'insumos',
-        rotulo: 'Insumos (item:qtd | ...)',
-        tipo: 'texto',
-        dica: `Itens cadastrados: ${itens.slice(0, 6).map((i) => i.slug ?? i.nome).join(', ') || 'nenhum'}`,
-        parse: (v) =>
-          String(v ?? '')
-            .split('|')
-            .map((p) => p.trim())
-            .filter(Boolean)
-            .map((p) => {
-              const [itemId, qtd] = p.split(':');
-              return { itemId: (itemId ?? '').trim(), qtd: Number(qtd) || 1 };
-            })
-            .filter((i) => i.itemId),
-      },
-      {
-        chave: 'saida',
-        rotulo: 'Saída (item:qtd | ...)',
-        tipo: 'texto',
-        parse: (v) =>
-          String(v ?? '')
-            .split('|')
-            .map((p) => p.trim())
-            .filter(Boolean)
-            .map((p) => {
-              const [itemId, qtd] = p.split(':');
-              return { itemId: (itemId ?? '').trim(), qtd: Number(qtd) || 1 };
-            })
-            .filter((i) => i.itemId),
-      },
-      { chave: 'tempoMs', rotulo: 'Tempo (ms)', tipo: 'numero' },
-      { chave: 'custoPoder', rotulo: 'Custo de Poder', tipo: 'numero' },
-      { chave: 'nivelMin', rotulo: 'Nível mín. da estação', tipo: 'numero' },
-    ];
-
-    // lista
-    let y = topo + 40;
-    for (const r of receitas) {
-      const linha = this.add.text(20, y, `${r.nome} • ${r.estacao ?? '—'}`, {
-        fontFamily: 'system-ui, sans-serif',
-        fontSize: '12px',
-        color: PERGAMINHO,
-      }).setInteractive({ useHandCursor: true }).setAlpha(0.85);
-      linha.on('pointerover', () => linha.setColor(OURO));
-      linha.on('pointerout', () => linha.setColor(PERGAMINHO));
-      linha.on('pointerdown', () => {
-        this.caminhoVolta.push({ tipo: 'receita' });
-        this.limparConteudo();
-        this.desenharFormulario(campos, repoRecipes, r, (f) => f);
-      });
-      this.areaConteudo.add(linha);
-      y += 22;
+      return;
     }
 
-    const btnNovo = this.add
-      .text(20, y + 8, '+ Nova receita', {
-        fontFamily: 'system-ui, sans-serif',
-        fontSize: '13px',
-        color: '#8fd18f',
-      })
-      .setInteractive({ useHandCursor: true });
-    btnNovo.on('pointerdown', () => {
-      this.caminhoVolta.push({ tipo: 'receita' });
-      this.limparConteudo();
-      this.desenharFormulario(campos, repoRecipes, null, (f) => f);
-    });
-    this.areaConteudo.add(btnNovo);
+    const alturaLinha = 48;
+    for (const p of portais.slice(0, 30)) {
+      const cx = 32 + (this.linhaLista - 32) / 2;
+      const ativo = Boolean(p.ativo);
+
+      const caixa = caixaArredondada(this, cx, y + 20, this.linhaLista - 24, 44, {
+        raio: 8,
+        preenchimento: 0x1d1710,
+        borda: ativo ? 0x8fd18f : 0x3a2c20,
+        larguraBorda: 1,
+        origem: [0.5, 0],
+      });
+      this.camada.add(caixa);
+
+      this.camada.add(
+        this.add
+          .text(44, y + 8, `${p.nome ?? 'Viajante'} — ${p.nomeBase ?? 'Acampamento'}`, {
+            ...FONTE_UI,
+            fontSize: '12px',
+            color: OURO,
+          })
+          .setOrigin(0, 0),
+      );
+      this.camada.add(
+        this.add
+          .text(44, y + 26, `nível ${p.nivel ?? 1} · ${ativo ? 'portal ativo' : 'oculto'}`, {
+            ...FONTE_UI,
+            fontSize: '10px',
+            color: ativo ? '#8fd18f' : '#a8967a',
+          })
+          .setOrigin(0, 0),
+      );
+
+      const btn = botao(this, cx + (this.linhaLista - 24) / 2 - 44, y + 34, ativo ? 'Ocultar' : 'Publicar', async () => {
+        try {
+          await repoPortais.salvar(p.id, { ativo: !ativo });
+          delete this.caches.portais;
+          this.status(ativo ? 'Portal ocultado.' : 'Portal publicado.');
+          this.redesenhar();
+        } catch (erro) {
+          this.status('Erro: ' + (erro?.message ?? erro), '#e0806a');
+        }
+      }, {
+        largura: 88,
+        altura: 22,
+        tamanho: '11px',
+        cor: ativo ? 0x3a2c20 : 0x8fd18f,
+        corHover: ativo ? 0x4a3828 : 0xa8e0a8,
+        corTexto: ativo ? PERGAMINHO : '#14100c',
+      });
+      this.camada.add(btn.caixa);
+
+      y += alturaLinha + 4;
+    }
   }
 
-  // ---------- reinos ----------
+  // ---------- abas especiais: jogadores ----------
 
-  async painelReinos({ topo }) {
-    const reinos = await this.carregar('reinos', () => repoWorldTemplates.listar());
+  async desenharJogadores(geracao) {
+    const [usuarios, admins] = await Promise.all([
+      this.carregar('usuarios', () => repoUsuarios.listar()),
+      this.carregar('admins', () => listarAdmins()),
+    ]);
+    if (!this.valido(geracao)) return;
 
-    this.areaConteudo.add(
-      this.add.text(20, topo, 'REINOS ETÉREOS (mundos paralelos)', {
-        fontFamily: 'Georgia, serif',
-        fontSize: '16px',
-        color: OURO,
-      }),
+    this.camada.add(uiTitulo(this, 32, TOPO, 'JOGADORES', '15px').setOrigin(0, 0));
+    this.camada.add(
+      uiTexto(
+        this,
+        32,
+        TOPO + 26,
+        'Promova a conta que gerencia o painel. A lista vem de users/{uid} e só aparece depois que a pessoa entrou no jogo uma vez.',
+        { fontSize: '11px', wordWrap: { width: this.linhaLista } },
+      )
+        .setOrigin(0, 0)
+        .setAlpha(0.75),
     );
 
-    const campos = [
-      { chave: 'nome', rotulo: 'Nome do reino', tipo: 'texto', obrigatorio: true },
-      { chave: 'descricao', rotulo: 'Descrição', tipo: 'texto' },
-      { chave: 'bioma', rotulo: 'Bioma', tipo: 'texto' },
-      { chave: 'dificuldade', rotulo: 'Dificuldade (1-5)', tipo: 'numero' },
-      { chave: 'faixaMin', rotulo: 'Nível mín.', tipo: 'numero' },
-      { chave: 'faixaMax', rotulo: 'Nível máx.', tipo: 'numero' },
-      { chave: 'seedBase', rotulo: 'Seed base', tipo: 'texto' },
-      {
-        chave: 'monstrosPossiveis',
-        rotulo: 'Monstros possíveis (ids separados por vírgula)',
-        tipo: 'texto',
-        parse: (v) =>
-          String(v ?? '')
-            .split(',')
-            .map((s) => s.trim())
-            .filter(Boolean),
-      },
-      {
-        chave: 'lootGlobal',
-        rotulo: 'Loot do mundo (item:chance:qtd | ...)',
-        tipo: 'texto',
-        parse: (v) =>
-          String(v ?? '')
-            .split('|')
-            .map((p) => p.trim())
-            .filter(Boolean)
-            .map((p) => {
-              const [itemId, chance, qtd] = p.split(':');
-              return { itemId: (itemId ?? '').trim(), chance: Number(chance) || 0, qtdMin: 1, qtdMax: Number(qtd) || 1 };
-            })
-            .filter((l) => l.itemId),
-      },
-    ];
-
-    let y = topo + 40;
-    for (const r of reinos) {
-      const linha = this.add.text(20, y, `${r.nome} • ${r.bioma ?? '—'} • nível ${r.faixaMin ?? 1}-${r.faixaMax ?? 9}`, {
-        fontFamily: 'system-ui, sans-serif',
-        fontSize: '12px',
-        color: PERGAMINHO,
-      }).setInteractive({ useHandCursor: true }).setAlpha(0.85);
-      linha.on('pointerover', () => linha.setColor(OURO));
-      linha.on('pointerout', () => linha.setColor(PERGAMINHO));
-      linha.on('pointerdown', () => {
-        this.caminhoVolta.push({ tipo: 'reino' });
-        this.limparConteudo();
-        this.desenharFormulario(campos, repoWorldTemplates, r, (f) => f);
-      });
-      this.areaConteudo.add(linha);
-      y += 22;
+    let y = TOPO + 72;
+    if (!usuarios.length) {
+      this.camada.add(
+        uiTexto(this, 32, y, 'Nenhum usuário cadastrado ainda.', { fontSize: '12px' }).setOrigin(0, 0),
+      );
+      return;
     }
 
-    const btnNovo = this.add
-      .text(20, y + 8, '+ Novo reino etéreo', {
-        fontFamily: 'system-ui, sans-serif',
-        fontSize: '13px',
-        color: '#8fd18f',
-      })
-      .setInteractive({ useHandCursor: true });
-    btnNovo.on('pointerdown', () => {
-      this.caminhoVolta.push({ tipo: 'reino' });
-      this.limparConteudo();
-      this.desenharFormulario(campos, repoWorldTemplates, null, (f) => f);
-    });
-    this.areaConteudo.add(btnNovo);
-  }
+    for (const u of usuarios.slice(0, 40)) {
+      const ehAdm = admins.includes(u.id);
+      const cx = 32 + (this.linhaLista - 32) / 2;
+      const w = this.linhaLista - 24;
 
-  // ---------- conquistas ----------
-
-  async painelConquistas({ topo }) {
-    const conq = await this.carregar('achievements', () => repoAchievements.listar());
-
-    this.areaConteudo.add(
-      this.add.text(20, topo, 'CONQUISTAS & ORBES ARCANOS', {
-        fontFamily: 'Georgia, serif',
-        fontSize: '16px',
-        color: OURO,
-      }),
-    );
-
-    const campos = [
-      { chave: 'nome', rotulo: 'Nome da conquista', tipo: 'texto', obrigatorio: true },
-      { chave: 'descricao', rotulo: 'Descrição', tipo: 'texto' },
-      {
-        chave: 'tipo',
-        rotulo: 'Tipo',
-        type: 'select',
-        opcoes: Object.values(TIPOS_ACHIEVEMENT),
-      },
-      { chave: 'chave', rotulo: 'Chave de condição (ex.: stats.portaisUsados)', tipo: 'texto' },
-      { chave: 'meta', rotulo: 'Meta (número)', tipo: 'numero' },
-      { chave: 'recompensaXp', rotulo: 'Recompensa XP', tipo: 'numero' },
-      { chave: 'recompensaOuro', rotulo: 'Recompensa Ouro', tipo: 'numero' },
-      {
-        chave: 'recompensaOrbes',
-        rotulo: 'Recompensa Orbes (tipo:qtd | ...)',
-        tipo: 'texto',
-        dica: Object.keys(FAIXAS_NIVEL_ORBE).join(', '),
-        parse: (v) =>
-          String(v ?? '')
-            .split('|')
-            .map((p) => p.trim())
-            .filter(Boolean)
-            .map((p) => {
-              const [tipo, qtd] = p.split(':');
-              return { tipo: (tipo ?? '').trim(), qtd: Number(qtd) || 1 };
-            })
-            .filter((o) => o.tipo),
-      },
-    ];
-
-    let y = topo + 40;
-    for (const c of conq) {
-      const linha = this.add.text(20, y, `${c.nome} • ${c.tipo ?? '—'} • meta ${c.meta ?? '?'}`, {
-        fontFamily: 'system-ui, sans-serif',
-        fontSize: '12px',
-        color: PERGAMINHO,
-      }).setInteractive({ useHandCursor: true }).setAlpha(0.85);
-      linha.on('pointerover', () => linha.setColor(OURO));
-      linha.on('pointerout', () => linha.setColor(PERGAMINHO));
-      linha.on('pointerdown', () => {
-        this.caminhoVolta.push({ tipo: 'conquista' });
-        this.limparConteudo();
-        this.desenharFormulario(campos, repoAchievements, c, (f) => f);
+      const caixa = caixaArredondada(this, cx, y + 21, w, 46, {
+        raio: 8,
+        preenchimento: ehAdm ? 0x2f2418 : 0x1d1710,
+        borda: ehAdm ? OURO : 0x2e241a,
+        larguraBorda: 1,
+        origem: [0.5, 0],
       });
-      this.areaConteudo.add(linha);
-      y += 22;
-    }
+      this.camada.add(caixa);
 
-    const btnNovo = this.add
-      .text(20, y + 8, '+ Nova conquista', {
-        fontFamily: 'system-ui, sans-serif',
-        fontSize: '13px',
-        color: '#8fd18f',
-      })
-      .setInteractive({ useHandCursor: true });
-    btnNovo.on('pointerdown', () => {
-      this.caminhoVolta.push({ tipo: 'conquista' });
-      this.limparConteudo();
-      this.desenharFormulario(campos, repoAchievements, null, (f) => f);
-    });
-    this.areaConteudo.add(btnNovo);
+      this.camada.add(
+        this.add
+          .text(44, y + 8, String(u.nome ?? u.email ?? u.id).slice(0, 26), {
+            ...FONTE_UI,
+            fontSize: '12px',
+            color: OURO,
+          })
+          .setOrigin(0, 0),
+      );
+      this.camada.add(
+        this.add
+          .text(44, y + 26, `${u.email ?? ''} · nv ${u.nivel ?? 1}${ehAdm ? ' · ADMIN' : ''}`, {
+            ...FONTE_UI,
+            fontSize: '10px',
+            color: ehAdm ? '#8fd18f' : PERGAMINHO,
+          })
+          .setOrigin(0, 0)
+          .setAlpha(ehAdm ? 1 : 0.7),
+      );
+
+      const btn = botao(this, cx + w / 2 - 46, y + 36, ehAdm ? 'Rebaixar' : 'Promover', async () => {
+        try {
+          await definirAdminUid(u.id, !ehAdm);
+          delete this.caches.admins;
+          this.status(ehAdm ? 'Acesso de admin removido.' : 'Promovido a admin.');
+          this.redesenhar();
+        } catch (erro) {
+          this.status('Erro: ' + (erro?.message ?? erro), '#e0806a');
+        }
+      }, {
+        largura: 92,
+        altura: 22,
+        tamanho: '11px',
+        cor: ehAdm ? 0x3a2c20 : 0xd4af6a,
+        corHover: ehAdm ? 0x4a3828 : 0xe6c47c,
+        corTexto: ehAdm ? PERGAMINHO : '#14100c',
+      });
+      this.camada.add(btn.caixa);
+
+      y += 50;
+    }
   }
+
+  // ---------- fechar ----------
 
   fechar() {
     this.scene.stop('Admin');
     if (this.scene.isPaused('World')) this.scene.resume('World');
     else if (!this.scene.isActive('World')) this.scene.start('World');
   }
+}
+
+function slugify(texto) {
+  return String(texto ?? '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_|_$/g, '');
 }
