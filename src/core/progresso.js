@@ -404,7 +404,8 @@ export async function definirPersonagemAtivo(uid, personagemId) {
 /** Salva o perfil completo no Firestore + localStorage. */
 async function salvarPerfil(uid, perfil) {
   gravarPerfilLocal(perfil);
-  if (firebaseDisponivel()) {
+  // Só escreve no Firestore se tiver uid válido (não local mode)
+  if (firebaseDisponivel() && uid) {
     try {
       await setDoc(
         doc(pegarDb(), NOME_COLECAO_JOGADORES, uid),
@@ -470,7 +471,7 @@ export async function definirBaseVisivel(uid, visivel) {
   await salvarPersonagem(uid, ativoId, { base: { ...char.base, visivel } });
 
   // Espelha na colecao publica `portais`
-  if (firebaseDisponivel()) {
+  if (firebaseDisponivel() && uid) {
     try {
       await setDoc(
         doc(pegarDb(), NOME_COLECAO_PORTAIS, uid),
@@ -527,6 +528,7 @@ export async function listarAdmins() {
 export async function definirAdminUid(uid, isAdmin) {
   if (!firebaseDisponivel()) return;
   try {
+    if (!uid) return;
     const db = pegarDb();
     const adminsRef = doc(db, 'system', 'admins');
     const snap = await getDoc(adminsRef);
