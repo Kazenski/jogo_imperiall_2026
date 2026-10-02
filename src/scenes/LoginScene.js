@@ -171,11 +171,12 @@ export class LoginScene extends Phaser.Scene {
    *
    * A ordem das telas e uma REGRA, não preferência de layout:
    *
-   *   Login -> Termos -> Criação do personagem -> Mundo
+   *   Login -> Termos -> Lobby -> (Criacao se novo) -> Mundo
    *
    *  - Termos primeiro porque é o único momento em que o aceite precisa ser
    *    explícito. Depois de gravar a versão, o jogo não pergunta de novo até a
    *    próxima alteração do documento legal.
+   *  - Lobby mostra até 10 personagens. Se não tem nenhum, vai para Criacao.
    *  - Criação antes do Mundo porque o mundo gera monstros em volta do ponto de
    *    entrada: sem personagem definido, o jogador aparecia no meio deles.
    *
@@ -191,12 +192,6 @@ export class LoginScene extends Phaser.Scene {
     try {
       // O catálogo é carregado AQUI, uma vez, e viaja no `contexto` para todas
       // as cenas seguintes.
-      //
-      // Antes ele era carregado só no fim de `paraCriacao`, o que significava
-      // que a `CriacaoScene` recebia `catalogo: undefined` — e o seletor de
-      // vocação aparecia com "Nenhuma vocação cadastrada pelo administrador"
-      // mesmo com quatro classes na semente. Carregar tarde demais não é o
-      // mesmo que não carregar: os dados existiam, só não tinham chegado.
       const catalogo = await carregarCatalogo();
 
       let progresso = await carregarProgresso(uid);
@@ -245,31 +240,41 @@ export class LoginScene extends Phaser.Scene {
               const atualizado = await salvarProgresso(uid, {
                 termos: { versao: aceite.versao, data: aceite.data, aceitoEm: Date.now() },
               });
-              this.scene.start('Criacao', {
-                ...contexto,
-                estado: atualizado,
-                aoConcluir: (escolha) => this.paraCriacao(contexto, escolha),
-              });
+              this.irParaLobby({ ...contexto, estado: atualizado });
             },
           });
           return;
         }
       }
 
-      // --- Criação de personagem ---
-      this.scene.start('Criacao', {
-        ...contexto,
-        estado: progresso,
-        aoConcluir: (escolha) => this.paraCriacao(contexto, escolha),
-      });
+      // --- Lobby (ou Criacao se não tem personagens) ---
+      this.irParaLobby({ ...contexto, estado: progresso });
     } catch (erro) {
-      // Sem isto, uma falha aqui deixa o jogador preso na tela de login sem
-      // nenhuma explicacao — parecia "o jogo me deslogou".
       console.error('[Login] falha ao entrar:', erro);
       this.avisarStatus(
         `Nao foi possivel carregar seu reino: ${erro?.message ?? erro}\nTente de novo.`,
       );
       if (this.botaoEntrar) this.botaoEntrar.definirVisual(0xd4af6a);
+    }
+  }
+
+  /** Direciona para Lobby ou Criacao conforme personagens existentes. */
+  irParaLobby(contexto) {
+    const { uid, perfil, progresso } = contexto;
+    const temChars = perfil?.personagens?.length > 0;
+
+    if (temChars) {
+      this.scene.start('Lobby', {
+        ...contexto,
+        estado: progresso, // progresso do personagem ativo (compatibilidade)
+      });
+    } else {
+      // Sem personagens -> direto para criação
+      this.scene.start('Criacao', {
+        ...contexto,
+        estado: progresso,
+        aoConcluir: (escolha) => this.paraCriacao(contexto, escolha),
+      });
     }
   }
 
@@ -303,7 +308,8 @@ export class LoginScene extends Phaser.Scene {
         personagemCriadoEm: Date.now(),
       });
 
-      this.scene.start('World', {
+      // Após criar, volta pro Lobby para o jogador ver o novo herói na lista
+      this.scene.start('Lobby', {
         uid,
         nome: escolha.nome,
         email: contexto.email,

@@ -1,6 +1,7 @@
 import Phaser from 'phaser';
 import { BootScene } from './scenes/BootScene.js';
 import { LoginScene } from './scenes/LoginScene.js';
+import { LobbyScene } from './scenes/LobbyScene.js';
 import { WorldScene } from './scenes/WorldScene.js';
 import { AdminScene } from './scenes/AdminScene.js';
 import { InventarioScene } from './scenes/InventarioScene.js';
@@ -38,10 +39,8 @@ const config = {
   scene: [
     BootScene,
     LoginScene,
-    // Ordem de entrada na ordem de uso. O Phaser nao respeita esta ordem para
-    // navegacao (cada cena chama `scene.start` explicitamente), mas deixa claro
-    // o fluxo: Login -> Termos -> Criacao -> World.
     TermosScene,
+    LobbyScene,
     CriacaoScene,
     AjudaScene,
     WorldScene,
