@@ -22,7 +22,17 @@ import {
   somarMapas,
   bonusEquipados,
 } from '../src/core/personagem.js';
-import { calcularNivel, xpParaProximoNivel } from '../src/core/progresso.js';
+import {
+  calcularNivel,
+  xpParaProximoNivel,
+  DIAS_CARENCIA_EXCLUSAO,
+  JANELA_EXCLUSAO_MS,
+  exclusaoPendente,
+  exclusaoExpiradaEm,
+  diasRestantesExclusao,
+  exclusaoVencida,
+  personagemJogavel,
+} from '../src/core/progresso.js';
 import { ESTAÇÕES } from '../src/core/enums.js';
 // O mapa de rótulos vive na cena de Fabricação. Aqui ele é lido do arquivo,
 // em vez de importado, para não puxar o Phaser inteiro para o Node.
@@ -192,6 +202,38 @@ ok(calcularNivel(0).nivel === 1, '0 xp = nivel 1');
 ok(xpParaProximoNivel(1) === 100, 'nivel 1->2 custa 100');
 ok(calcularNivel(100).nivel === 2, '100 xp = nivel 2');
 ok(calcularNivel(100 + xpParaProximoNivel(2)).nivel === 3, 'acumulado = nivel 3');
+
+// A conta da carência de exclusão é o que separa "o botão funciona" de "o botão
+// apaga o personagem de vez". Sem teste, um `+ 1` em vez de `+ JANELA_EXCLUSAO_MS`
+// apaga em um dia e ninguém vê até ser tarde.
+console.log('\n== exclusao com carencia ==');
+{
+  const DIA = 24 * 60 * 60 * 1000;
+  const agora = Date.UTC(2026, 0, 1);
+  const agendado = { exclusaoAgendadaEm: agora };
+
+  ok(DIAS_CARENCIA_EXCLUSAO === 30, `carencia e de 30 dias (${DIAS_CARENCIA_EXCLUSAO})`);
+  ok(JANELA_EXCLUSAO_MS === 30 * DIA, 'janela em ms bate com os 30 dias');
+
+  ok(exclusaoPendente({}) === false, 'sem campo: nada agendado');
+  ok(exclusaoPendente({ exclusaoAgendadaEm: null }) === false, 'null: nada agendado');
+  ok(exclusaoPendente(agendado) === true, 'timestamp: agendado');
+
+  ok(exclusaoExpiradaEm({}) === null, 'sem agendamento nao vence');
+  ok(exclusaoExpiradaEm(agendado, agora) === agora + JANELA_EXCLUSAO_MS, 'vence exatamente 30 dias depois');
+
+  ok(diasRestantesExclusao(agendado, agora) === 30, 'agora: faltam 30 dias');
+  ok(diasRestantesExclusao(agendado, agora + 29 * DIA) === 1, 'faltando 1 dia');
+  ok(diasRestantesExclusao(agendado, agora + 45 * DIA) === 0, 'ja vencido: 0, nunca negativo');
+
+  ok(exclusaoVencida(agendado, agora + 29 * DIA) === false, 'nao vence antes do prazo');
+  ok(exclusaoVencida(agendado, agora + 30 * DIA) === true, 'vence no prazo exato');
+  ok(exclusaoVencida({}, agora) === false, 'sem agendamento nunca vence');
+
+  ok(personagemJogavel({ nome: 'A' }) === true, 'heroi normal e jogavel');
+  ok(personagemJogavel(agendado) === false, 'heroi agendado para exclusao esta congelado');
+  ok(personagemJogavel(null) === false, 'personagem inexistente nao e jogavel');
+}
 
 console.log('\n== receitas e spawns ==');
 ok(receitasDaEstacao(catalogo, 'forja', 1).length === 2, 'receitas de forja no nivel 1');

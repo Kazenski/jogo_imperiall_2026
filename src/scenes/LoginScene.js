@@ -6,7 +6,7 @@ import {
   firebaseDisponivel,
   traduzirErro,
 } from '../core/firebase.js';
-import { carregarProgresso, salvarProgresso } from '../core/progresso.js';
+import { carregarProgresso, salvarTermos } from '../core/progresso.js';
 import { carregarCatalogo } from '../core/catalogo.js';
 import { temConsentimento } from '../core/apagamento.js';
 import { ACEITE_REQUERIDO } from '../dados/legal.js';
@@ -215,15 +215,15 @@ export class LoginScene extends Phaser.Scene {
   /**
    * Escreve na linha de status **sem rebentar** se a cena já morreu.
    *
-   * `entrar()` termina com `scene.start('Criacao')`, e é a `CriacaoScene` que
-   * chama `paraCriacao()` de volta quando o jogador confirma. A essa altura a
-   * cena de Login já foi derrubada: os `Text` dela têm o canvas destruído, e
-   * qualquer `setText` posterior estoura com
+   * `entrar()` faz `await` em cima de rede (perfil, termos, progresso) e só
+   * então troca de cena. Um `await` que resolve depois do `scene.start()` deixa
+   * a cena de Login já derrubada quando o código volta a rodar: os `Text` dela
+   * têm o canvas destruído, e qualquer `setText` posterior estoura com
    *
    *   TypeError: Cannot read properties of null (reading 'drawImage')
    *   at Frame.updateUVs ... at Text.setText
    *
-   * — o que derrubava a transição inteira e deixava o jogador sem cena
+   * — o que derrubaria a transição inteira e deixaria o jogador sem cena
    * nenhuma na tela, sem mensagem. O objeto continua no JavaScript (o GC não
    * passou por ele), então `this.status?.setText` não acusaria nada; só
    * `sys.isActive()` diz a verdade.
@@ -340,14 +340,16 @@ export class LoginScene extends Phaser.Scene {
 
       let progresso = await carregarProgresso(uid);
 
-      // Primeiro login: usa o nome do Google no primeiro salvamento.
-      if (uid && (!progresso.nome || progresso.nome === 'Viajante')) {
-        progresso = await salvarProgresso(uid, { nome });
-      }
-
-      if (user && !progresso.criadoEm) {
-        progresso = await salvarProgresso(uid, {});
-      }
+      // NÃO grava nada no personagem aqui.
+      //
+      // Antes havia dois `salvarProgresso` neste método: um para trazer o nome
+      // do Google e outro para "criar" o personagem (`!progresso.criadoEm`).
+      // Sem personagem ativo, `salvarProgresso` cai no fallback `criarPersonagem`
+      // e CRIA um "Viajante" só para guardar esse dado. O jogador entrava no
+      // lobby já com um personagem fantasma que ele nunca fez — e o botão de
+      // criar virava redundante. O nome do Google só é usado como sugestão de
+      // nome na tela de criação, que é onde ele pertence.
+      void nome;
 
       // Garante perfil com role + verifica admin
       let perfil = null;
@@ -381,17 +383,24 @@ export class LoginScene extends Phaser.Scene {
             ...contexto,
             estado: progresso,
             aoAceitar: async (aceite) => {
-              const atualizado = await salvarProgresso(uid, {
-                termos: { versao: aceite.versao, data: aceite.data, aceitoEm: Date.now() },
+              // Vai para o PERFIL, não para um personagem: aceitar termos não
+              // deve criar ninguém na lista.
+              const perfilComTermos = await salvarTermos(uid, {
+                versao: aceite.versao,
+                data: aceite.data,
+                aceitoEm: Date.now(),
               });
-              this.irParaLobby({ ...contexto, estado: atualizado });
+              this.irParaLobby({
+                ...contexto,
+                perfil: perfilComTermos ?? contexto.perfil,
+              });
             },
           });
           return;
         }
       }
 
-      // --- Lobby (ou Criacao se não tem personagens) ---
+      // --- Lobby: SEMPRE, mesmo sem personagem nenhum ---
       this.irParaLobby({ ...contexto, estado: progresso });
     } catch (erro) {
       console.error('[Login] falha ao entrar:', erro);
@@ -404,70 +413,19 @@ export class LoginScene extends Phaser.Scene {
     }
   }
 
-  /** Direciona para Lobby ou Criacao conforme personagens existentes. */
+  /**
+ * O lobby é o ÚNICO destino depois do login.
+ *
+ * Antes, quem não tinha personagem ia direto para `Criacao` e nunca via a
+ * seleção. Isso partia o fluxo em dois: quem já tinha personagem usava um
+ * caminho e quem não tinha, outro — e a criação ficava impossível de fazer
+ * a partir do próprio lobby. Agora o lobby é o hub, e o botão de criar está
+ * nele.
+ */
   irParaLobby(contexto) {
-    const { uid, perfil, progresso } = contexto;
-    const temChars = perfil?.personagens?.length > 0;
-
-    if (temChars) {
-      this.scene.start('Lobby', {
-        ...contexto,
-        estado: progresso, // progresso do personagem ativo (compatibilidade)
-      });
-    } else {
-      // Sem personagens -> direto para criação
-      this.scene.start('Criacao', {
-        ...contexto,
-        estado: progresso,
-        aoConcluir: (escolha) => this.paraCriacao(contexto, escolha),
-      });
-    }
-  }
-
-  /** Grava nome/raça/vocação e só então inicia o mundo. */
-  async paraCriacao(contexto, escolha) {
-    const { uid, progresso } = contexto;
-
-    // `null` = cancelou a edição de um personagem existente.
-    if (!escolha) {
-      this.scene.start('World', {
-        uid,
-        nome: progresso.nome,
-        email: contexto.email,
-        podeSair: contexto.podeSair,
-        estado: progresso,
-        catalogo: contexto.catalogo,
-        perfil: contexto.perfil,
-        isAdmin: contexto.isAdmin,
-      });
-      return;
-    }
-
-    this.avisarStatus('Forjando seu personagem...');
-    try {
-      let estado = await salvarProgresso(uid, {
-        nome: escolha.nome,
-        racaId: escolha.racaId,
-        vocacaoId: escolha.vocacaoId,
-        // Marca que a criação terminou. Sem isto, `CriacaoScene` reabriria em
-        // modo edição para quem só entrou para olhar a tela.
-        personagemCriadoEm: Date.now(),
-      });
-
-      // Após criar, volta pro Lobby para o jogador ver o novo herói na lista
-      this.scene.start('Lobby', {
-        uid,
-        nome: escolha.nome,
-        email: contexto.email,
-        podeSair: contexto.podeSair,
-        estado,
-        catalogo: contexto.catalogo,
-        perfil: contexto.perfil,
-        isAdmin: contexto.isAdmin,
-      });
-    } catch (erro) {
-      console.error('[Login] falha ao criar personagem:', erro);
-      this.avisarStatus(`Nao foi possivel criar o personagem: ${erro?.message ?? erro}`);
-    }
+    this.scene.start('Lobby', {
+      ...contexto,
+      estado: contexto.progresso, // do personagem ativo, só por compatibilidade
+    });
   }
 }

@@ -256,3 +256,38 @@ Obrigado por construir o Imperio com a gente.
 - **Sessão já ativa é tratada.** Se você já está logado, o jogo entra
   direto e avisa com quem — o botão do Google deixa de ser um botão morto.
 - **Corrigido o erro do painel de administração.**
+
+---
+
+## O salão dos heróis (lobby)
+
+*v0.1.3 · Outubro de 2026*
+
+### O que mudou
+
+- **Depois de entrar com o Google, você cai no salão** — não na tela de criação
+  direto. O salão lista **até 10 heróis** e é a partir dele que o jogo continua.
+- **Escolher herói pede confirmação.** Clicar num cartão abre uma janela com o
+  nome e o nível de quem vai entrar, e só depois disso o mundo abre. Dá para
+  voltar sem risco.
+- **O salão virou um CRUD de verdade.** Criar (`+ NOVO HERÓI`), editar
+  (`EDITAR`) e excluir (`EXCLUIR`) funcionam e gravam de fato — antes os botões
+  existiam mas nada era salvo.
+- **Excluir passou a ter 30 dias de prazo.** O herói agendado fica **congelado**
+  (não dá para entrar nele) e mostra quantos dias faltam. Durante esse tempo
+  dá para **cancelar** e resgatá-lo. Só depois de 30 dias ele é removido de
+  verdade, e isso é conferido toda vez que o salão abre.
+- **Editar só trava o que precisa.** O nome, a raça e a vocação podem ser
+  ajustados enquanto o herói está no nível 1 ou 2.
+
+### Correções que vieram junto
+
+- **Voltar do formulário agora volta ao salão**, e não para a tela de login.
+- **O herói criado aparece na lista** na hora, com a confirmação escrita.
+- Herói agendado para exclusão não pode mais ser aberto por engano.
+
+### Nota
+
+Se você já tinha mais de um herói, nada foi perdido: a carência de 30 dias só
+vale para exclusões marcadas a partir de agora. A tela de Reinos tem um erro
+conhecido em revisão, fora do escopo desta versão.

@@ -39,7 +39,15 @@ import {
 import { pegarDb, firebaseDisponivel } from './firebase.js';
 import { estadoInicial } from './personagem.js';
 
-const MAX_PERSONAGENS = 10;
+/**
+ * Teto de personagens por conta.
+ *
+ * Exportado porque o lobby desenha os slots vazios a partir do mesmo número —
+ * dois valores separados aqui significariam um "+ NOVO HERÓI" que aparece com a
+ * lista cheia e um `criarPersonagem` que joga `Limite de ... atingido`.
+ */
+export const MAX_PERSONAGENS = 10;
+
 const CHAVE_LOBBY_LOCAL = 'imperiall_lobby';
 
 /** Estado inicial de UM personagem (sem uid/nome globais). */
@@ -310,6 +318,10 @@ export async function criarPersonagem(uid, dadosNovo) {
       portaisConstruidos: 0,
     },
     posicao: { x: 0, y: 0 },
+    // Carência de exclusão. `null` = personagem ativo e jogável. Um timestamp
+    // aqui significa "excluir em 30 dias", e enquanto ele existir o personagem
+    // fica congelado — não dá para entrar nele.
+    exclusaoAgendadaEm: null,
     criadoEm: Date.now(),
     atualizadoEm: Date.now(),
   };
@@ -379,7 +391,16 @@ export async function salvarPersonagem(uid, personagemId, estado) {
   return perfil.personagens[idx];
 }
 
-/** Apaga um personagem (com confirmacao no caller). */
+/**
+ * Apaga um personagem na hora, sem carência.
+ *
+ * @deprecated Não usar para a interface. Apagar direto burla a carência de 30
+ * dias e não oferece nenhuma chance de resgate — um toque acidental destrói
+ * semanas de jogo sem volta. O lobby usa `agendarExclusao` (30 dias, cancelável
+ * até lá, com `purgarExclusoesExpiradas` concretizando). Esta função fica só
+ * parascripts de manutenção/seed em que a remoção imediata é de fato o que se
+ * quer.
+ */
 export async function apagarPersonagem(uid, personagemId) {
   const perfil = await carregarPerfilJogador(uid);
   perfil.personagens = perfil.personagens?.filter((p) => p.id !== personagemId) ?? [];
@@ -388,6 +409,123 @@ export async function apagarPersonagem(uid, personagemId) {
   }
   perfil.atualizadoEm = Date.now();
   await salvarPerfil(uid, perfil);
+}
+
+// =====================================================================
+// Exclusão com carência de 30 dias
+//
+// Apagar um personagem é irreversível: base, inventário, talentos e XP vão
+// embora juntos. Um clique acidental não pode custar semanas de jogo, então a
+// exclusão é agendada e só se concretiza depois de 30 dias — com a possibilidade
+// de cancelar durante a janela.
+// =====================================================================
+
+/** Dias entre agendar e apagar de fato. */
+export const DIAS_CARENCIA_EXCLUSAO = 30;
+
+/** Janela em milissegundos. */
+export const JANELA_EXCLUSAO_MS = DIAS_CARENCIA_EXCLUSAO * 24 * 60 * 60 * 1000;
+
+/** Verdadeiro se o personagem tem exclusão agendada. */
+export function exclusaoPendente(char) {
+  return Number.isFinite(char?.exclusaoAgendadaEm) && char.exclusaoAgendadaEm > 0;
+}
+
+/**
+ * Momento em que o personagem será removido, ou `null` se não há exclusão.
+ * @param {object} char
+ * @param {number} [agora]
+ */
+export function exclusaoExpiradaEm(char, agora = Date.now()) {
+  if (!exclusaoPendente(char)) return null;
+  return char.exclusaoAgendadaEm + JANELA_EXCLUSAO_MS;
+}
+
+/** Dias que faltam para a exclusão acontecer. `0` quando já venceu. */
+export function diasRestantesExclusao(char, agora = Date.now()) {
+  const vence = exclusaoExpiradaEm(char, agora);
+  if (vence === null) return 0;
+  return Math.max(0, Math.ceil((vence - agora) / (24 * 60 * 60 * 1000)));
+}
+
+/** Verdadeiro se a carência já passou e o personagem pode ser removido. */
+export function exclusaoVencida(char, agora = Date.now()) {
+  const vence = exclusaoExpiradaEm(char, agora);
+  return vence !== null && vence <= agora;
+}
+
+/** Personagem que pode ser jogado: não pode ter exclusão pendente. */
+export function personagemJogavel(char) {
+  return Boolean(char) && !exclusaoPendente(char);
+}
+
+/**
+ * Agenda a exclusão de um personagem (não apaga nada agora).
+ * @returns {Promise<boolean>} se o personagem existia
+ */
+export async function agendarExclusao(uid, personagemId, agora = Date.now()) {
+  const perfil = await carregarPerfilJogador(uid);
+  const char = perfil.personagens?.find((p) => p.id === personagemId);
+  if (!char) return false;
+  char.exclusaoAgendadaEm = agora;
+  perfil.atualizadoEm = agora;
+  await salvarPerfil(uid, perfil);
+  return true;
+}
+
+/** Cancela uma exclusão agendada e devolve o personagem ao jogo. */
+export async function cancelarExclusao(uid, personagemId) {
+  const perfil = await carregarPerfilJogador(uid);
+  const char = perfil.personagens?.find((p) => p.id === personagemId);
+  if (!char) return false;
+  char.exclusaoAgendadaEm = null;
+  perfil.atualizadoEm = Date.now();
+  await salvarPerfil(uid, perfil);
+  return true;
+}
+
+/**
+ * Remove de verdade todo personagem cuja carência de 30 dias já venceu.
+ *
+ * Rodar no lobby é o que faz a carência ter efeito: sem uma leitura do perfil
+ * em algum momento depois do vencimento, o agendamento seria só um rótulo.
+ *
+ * @returns {Promise<string[]>} ids removidos
+ */
+export async function purgarExclusoesExpiradas(uid, agora = Date.now()) {
+  const perfil = await carregarPerfilJogador(uid);
+  const antes = perfil.personagens?.length ?? 0;
+  if (!antes) return [];
+
+  const removidos = (perfil.personagens ?? [])
+    .filter((p) => exclusaoVencida(p, agora))
+    .map((p) => p.id);
+
+  if (!removidos.length) return [];
+
+  perfil.personagens = perfil.personagens.filter((p) => !removidos.includes(p.id));
+  if (removidos.includes(perfil.personagemAtivoId)) {
+    perfil.personagemAtivoId = perfil.personagens.find((p) => personagemJogavel(p))?.id ?? null;
+  }
+  perfil.atualizadoEm = agora;
+  await salvarPerfil(uid, perfil);
+  return removidos;
+}
+
+/**
+ * Grava o aceite dos termos no PERFIL, não em um personagem.
+ *
+ * Antes isso passava por `salvarProgresso`, que — sem personagem ativo — caía
+ * no fallback e criava um "Viajante" só para guardar a data. O jogador aceitava
+ * os termos e acordava com um personagem fantasma na lista do lobby.
+ */
+export async function salvarTermos(uid, termos) {
+  if (!uid) return null;
+  const perfil = await carregarPerfilJogador(uid);
+  perfil.termos = termos;
+  perfil.atualizadoEm = Date.now();
+  await salvarPerfil(uid, perfil);
+  return perfil;
 }
 
 /** Define qual personagem está ativo (selecionado no lobby). */

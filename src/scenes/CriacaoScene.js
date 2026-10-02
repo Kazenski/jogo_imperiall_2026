@@ -36,14 +36,26 @@ export class CriacaoScene extends Phaser.Scene {
     this.email = dados?.email ?? null;
     this.isAdmin = dados?.isAdmin ?? false;
     this.aoConcluir = dados?.aoConcluir ?? (() => {});
+    // Para onde ir quando o jogador desiste (ESC / "Voltar"). Sem isto, sair da
+    // criação devolveria o jogador ao Login, pulando o lobby de onde ele veio.
+    this.aoCancelar = dados?.aoCancelar ?? (() => this.scene.start('Login'));
+    // Modo pedido explicitamente pelo chamador. `null` = deduzir.
+    this.editandoSolicitado = dados?.editando ?? null;
   }
 
   create() {
     this.cameras.main.setBackgroundColor('#0d0a07');
 
     // Estado local da tela (ainda não salvo).
-    const jaTemPersonagem = Boolean(this.estado?.nome && this.estado.nome !== 'Viajante' && this.estado?.criadoEm);
-    this.editando = jaTemPersonagem;
+    //
+    // O chamador manda `editando` explicitamente quando sabe — o lobby tem o
+    // `id` do personagem e não precisa deduzir. A dedução abaixo é o fallback
+    // para quando ninguém manda nada, e ela erra num caso real: um herói
+    // chamado "Viajante" (nome perfectly válido, e o padrão de fábrica) era
+    // lido como "sem personagem" e a tela abria em modo de criação, o que
+    // ofereceria trocar o herói existente em vez de editá-lo.
+    const deduzido = Boolean(this.estado?.nome && this.estado.nome !== 'Viajante' && this.estado?.criadoEm);
+    this.editando = this.editandoSolicitado ?? deduzido;
 
     this.formulario = {
       nome: this.editando ? this.estado.nome : String(this.nome ?? '').split(' ')[0] ?? '',
@@ -72,7 +84,7 @@ export class CriacaoScene extends Phaser.Scene {
 
     aoTeclar(this, 'ESC', () => {
       if (this.editando) this.aoConcluir(null);
-      else this.scene.start('Login');
+      else this.aoCancelar();
     });
   }
 

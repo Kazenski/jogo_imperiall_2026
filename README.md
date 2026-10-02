@@ -67,12 +67,17 @@ A ordem das telas é uma **regra**, não preferência de layout:
 
 ```
 Boot (texturas procedurais)
-  └─> Login ──> Termos ──> Criação do personagem ──> Mundo
-                 (LGPD)       (não ser atacado)
-                                       │
-                                       └─> painéis: Mochila · Talentos ·
-                                           Fabricação · Reinos · Wiki (H) ·
-                                           Personagem · Admin (F2)
+  └─> Login ──> Termos ──> Salão (lobby) ──> Confirmação ──> Mundo
+                 (LGPD)      até 10 heróis     de entrada      │
+                                          │                   │
+                                          │                   └─> painéis:
+                                          │                       Mochila · Talentos ·
+                                          │                       Fabricação · Reinos ·
+                                          │                       Wiki (H) · Personagem ·
+                                          │                       Admin (F2)
+                                          │
+                                          └─> Criação/editar herói
+                                              (volta para o salão)
 ```
 
 Por que cada etapa existe:
@@ -80,11 +85,37 @@ Por que cada etapa existe:
 - **Termos antes do mundo** — é o único momento em que o aceite precisa ser
   explícito. Depois de gravar a versão, o jogo não pergunta de novo até a
   próxima alteração do documento legal (`VERSAO_TERMOS` em `src/dados/legal.js`).
+- **Salão antes do mundo** — o login nunca mais leva direto para a criação nem
+  para o mundo. O lobby é o **hub**: lista até 10 heróis (`MAX_PERSONAGENS` em
+  `src/core/progresso.js`), deixa criar, editar e excluir, e só entra no mundo
+  depois de um clique no herói e uma confirmação. Quem entra pela primeira vez
+  cai no lobby com uma lista de vagas vazias e o botão `+ NOVO HERÓI`.
 - **Criação antes do mundo** — o mundo gera monstros em volta do ponto de
   entrada. Sem personagem definido, o jogador aparecia no meio deles.
 - **Wiki como tecla H** — toda a escrita do administrador (`descricao`,
   `imagem`) é lida de lá. Se o admin não escreveu, a wiki mostra os campos
   numéricos em vez de um cartão vazio.
+
+### Exclusão com carência de 30 dias
+
+Apagar um herói leva **base, inventário, talentos e XP** junto. Um clique
+acidental não pode custar semanas de jogo, então `EXCLUIR` no lobby **não
+apaga**: marca `exclusaoAgendadaEm` e o cartão fica **congelado** — não dá para
+entrar nele, e aparece `CANCELAR EXCLUSÃO` com a contagem de dias restantes.
+A remoção só acontece quando `purgarExclusoesExpiradas()` roda (no carregamento
+do lobby) e o prazo estourou.
+
+| Função (`src/core/progresso.js`) | Papel |
+| --- | --- |
+| `agendarExclusao(uid, id)` | Marca os 30 dias; herói fica congelado |
+| `cancelarExclusao(uid, id)` | Desmente, herói volta a ser jogável |
+| `purgarExclusoesExpiradas(uid)` | Remove de vez quem venceu o prazo |
+| `exclusaoPendente` / `exclusaoExpiradaEm` / `diasRestantesExclusao` | Consulta |
+| `personagemJogavel(char)` | `false` para herói congelado |
+| `DIAS_CARENCIA_EXCLUSAO = 30` | O prazo |
+
+`apagarPersonagem()` continua existindo para seed e manutenção, mas está
+marcado `@deprecated`: chamar direto burla a carência e não dá chance de resgate.
 
 ### Novidades no fluxo (Out/2026)
 
@@ -158,7 +189,8 @@ src/
     BootScene.js           gera as texturas proceduralmente
     LoginScene.js          Google / modo local e o roteamento pós-login
     TermosScene.js         aceite dos termos
-    CriacaoScene.js        criação e seleção de personagem
+    LobbyScene.js          salão: até 10 heróis, CRUD e exclusão com carência
+    CriacaoScene.js        criação e edição de personagem
     WorldScene.js          o laço principal do jogo
     StatusScene.js         personagem, atributos, equipamento, apagar dados
     InventarioScene.js     mochila, equipamento e aplicação de orbes
@@ -457,6 +489,48 @@ porque voltam.
     todos os gates de CI. Diagnóstico de bug de UI exige rodar o jogo e ler o
     console — se não há asserção quebrada e o build passa, **o browser é a
     única fonte da verdade**.
+
+16. **O primeiro `pointerdown` a chamar `stopPropagation()` cancela todos os
+    seguintes, e a ordem é a de inserção na lista de input.** `InputManager.hitTest`
+    não ordena nada (`sortGameObjects` só roda no `processOverEvents`); medido
+    num botão do lobby, a ordem foi `[slot, capa, botão]` — o **slot do fundo
+    primeiro**, apesar de o botão ser desenhado por cima. Como o handler mais
+    fundo da lista roda antes e `processDownEvents` quebra em
+    `_eventData.cancelled`, um `stopPropagation()` no objeto mais antigo mata o
+    botão que o jogador está tentando clicar. A correção que funciona não é
+    mexer na ordem: é **`input.enabled = false` em tudo que já estava na tela
+    enquanto o modal está aberto**, e criar a `capa` do modal **por último**, com
+    os botões antes dela.
+
+17. **`setStrokeStyle()` não existe em `Container`.** `caixaArredondada()`
+    devolve um `Container` cujo `Graphics` é `.caixa`. Chamar
+    `caixa.setStrokeStyle(...)` estoura com `TypeError: canvas.getContext is
+    not a function` no **primeiro hover**. Para repintar, limpe e redesenhe o
+    `Graphics` (`pintarCartao()` no lobby) em vez de pedir um traço novo.
+
+18. **`SceneManager.stop()` numa cena já parada chama `sleep()`, não `shutdown()`.**
+    `sleep()` **não** dispara `SHUTDOWN`, então `destroy()` não roda e o
+    `<input>` do DOM criado por `ui/formularios.js` sobrevive — ele fica
+    visível por cima da cena seguinte. Sempre pare antes de reiniciar com
+    `start()`, e nunca chame `stop()` de uma cena parada esperando que limpe o
+    display list.
+
+19. **Um `Text` continua no JavaScript depois do `SHUTDOWN`, mas o canvas dele
+    já foi destruído.** Tocar nele depois de um `await` estoura com
+    `TypeError: Cannot read properties of null (reading 'glTexture')` em
+    `TextStyle2.setColor`. Se a chamada está **antes** do `try` do chamador, o
+    `throw` come a operação inteira — no lobby, a gravação do herói sumia e o
+    jogador ficava preso na tela de criação sem nenhuma mensagem. Cenas
+    assíncronas precisam de guarda (`if (!this.sys.isActive()) return;`) e
+    devem passar mensagens de retorno pelos **dados** do `scene.start`, porque
+    o `Text` antigo morre junto com a cena.
+
+20. **`ScenePlugin.start()` não derruba a cena que está embaixo.** `start()` é
+    enfileirado e reinicia só a cena alvo. Se a cena que chama é a **própria** que
+    já está parada, nada é encerrado e a cena de baixo continua de pé: duas cenas
+    ativas, dois conjuntos de input disputando o mesmo ponteiro. O dono da volta
+    tem que parar explicitamente (`voltarAoLobby()` no lobby) — e só quando a
+    cena está mesmo ativa, senão vale o item 18.
 
 ## Arquitetura de Servidores
 

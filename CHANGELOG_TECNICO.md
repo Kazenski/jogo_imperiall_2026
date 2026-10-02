@@ -707,3 +707,147 @@ Diagnóstico: comparar `usoSolto.source` com um literal equivalente, ambos de
 
 **Regra geral deste repositório: regex com `\p{...}` vai como literal, nunca
 como `new RegExp(template)`.**
+
+---
+
+## [0.1.3] — Lobby como hub, CRUD real e exclusao com carencia
+
+*Outubro de 2026*
+
+Objetivo: depois de "Entrar com Google" o jogador sempre cai no salao (ate 10
+herois), clica num heroi para confirmar a entrada, e tem CRUD completo — com
+exclusao que so vale 30 dias depois.
+
+### 1. O lobby existia, mas nao fazia nada
+
+A tela estava desenhada e registrada no `config.js`. **Os quatro caminhos
+mortos** e o porque de "entrar" parecer quebrado:
+
+| Caminho | Estado anterior | O que acontecia |
+| --- | --- | --- |
+| `aoEntrar` | `LobbyScene.init` lia `dados.aoEntrar`, **ninguem passava** | no-op silencioso |
+| `novoPersonagem` | `aoCriado()` so reiniciava a cena | nunca chamava `criarPersonagem` |
+| `editarPersonagem` | passava `personagem:`; `CriacaoScene.init` le **`estado:`** | modo edicao nunca ativava, nunca salvava |
+| `APAGAR` | chamava `apagarPersonagem` direto | sem carencia, sem volta |
+
+Dois outros desvios: `irParaLobby` ainda tinha um ramo `temChars` que pulava o
+lobby e ia direto para `Criacao` (contrariando o requisito), e o lobby nao
+iniziava `World` — apenas voltava para ele.
+
+**Correcao.** `irParaLobby` perdeu o ramo. `LobbyScene` passou a fazer a
+transicao ele mesmo: `carregarPersonagem` + `definirPersonagemAtivo` +
+`scene.start('World', ...)`, passando `podeSair`/`email`/`nomeConta` por `init`
+em vez da indirecao `aoEntrar` que ninguem fornecia. `aoConcluir` das rotas de
+criar/editar agora grava de verdade (`criarPersonagem` / `salvarPersonagem`) e
+`CriacaoScene` recebe `estado: char` + `editando: true`.
+
+### 2. Exclusao com carencia de 30 dias (`src/core/progresso.js`)
+
+`exclusaoAgendadaEm` entra no documento do personagem (`criarPersonagem` ja
+inicializa em `null`), e o bloco novo expoe `DIAS_CARENCIA_EXCLUSAO = 30`,
+`JANELA_EXCLUSAO_MS`, `exclusaoPendente`, `exclusaoExpiradaEm`,
+`diasRestantesExclusao`, `exclusaoVencida`, `personagemJogavel`,
+`agendarExclusao`, `cancelarExclusao` e `purgarExclusoesExpiradas`.
+
+`MAX_PERSONAGENS` saiu do lobby e passou a ser exportado de `progresso.js`,
+para que o limite tenha uma fonte só.
+
+`apagarPersonagem()` continua existindo (seed e manutencao) mas foi marcado
+`@deprecated`: chamar direto burla a carencia e nao da chance de resgate.
+
+### 3. Termos: `salvarTermos` em vez do atalho
+
+Aceitar os termos usava `salvarProgresso`, que **caia em `criarPersonagem`** e
+criava um heroi fantasma "Viajante" so para guardar a data. Novo `salvarTermos`
+grava direto no perfil. As duas chamadas a `salvarProgresso` no login foram
+removidas — o nome de exibicao do Google virou so sugestao na tela de criacao.
+
+### 4. Bugs de runtime encontrados no navegador
+
+`npm test` roda logica pura em Node e **nunca importa Phaser** (README, item
+15). Tudo abaixo passou com build verde e suite verde; nenhum era alcancavel sem
+rodar o jogo.
+
+**(a) `setStrokeStyle()` em `Container`.** O hover dos cartoes fazia
+`bg.setStrokeStyle(...)`, sendo que `caixaArredondada()` devolve um
+**Container** — o `Graphics` e `.caixa`. `TypeError` no primeiro hover.
+Trocado por `pintarCartao()`, que faz `clear()` e redesenha.
+
+**(b) `avisar()` num `Text` morto.** `salvarCriacao` / `salvarEdicao` /
+`executarExclusao` / `executarResgate` rodam **depois** de `await`, ou seja com
+o lobby ja parado. O `Text` continua no JS mas o canvas foi destruido:
+
+```
+TypeError: Cannot read properties of null (reading 'glTexture')
+    at Text2.updateText ... at TextStyle2.setColor ... at LobbyScene.avisar
+```
+
+Como a chamada ficava **antes** do `try` do chamador, o `throw` comia a
+gravacao inteira: o heroi nao era salvo, nenhuma cena mudava e o jogador
+ficava preso em `Criacao` sem mensagem nenhuma. Duas correcoes: guarda
+`if (!this.mensagem || !this.sys.isActive()) return;` em `avisar()`, e
+`this.mensagem = null` no `SHUTDOWN`.
+
+Atencao: dentro de `create()` o `sys.isActive()` **ainda e falso** (o status
+vira RUNNING depois), entao a mensagem que chega nos dados da cena e escrita
+direto em `this.mensagem`, sem passar por `avisar()`.
+
+**(c) `ScenePlugin.start()` nao derruba a cena de baixo.** `voltarAoLobby()`
+chama `scene.start('Lobby', ...)` a partir do **proprio lobby, que ja estava
+parado** — `start()` e enfileirado e nao tem cena "corrente" para derrubar. A
+`Criacao` continuava de pe por baixo: duas cenas ativas, dois conjuntos de input
+disputando o mesmo ponteiro, e o `<input>` do DOM por cima do lobby novo.
+Centralizado em `voltarAoLobby()`, que agora tambem para a `Criacao` — mas
+**so quando ela esta ativa**: `SceneManager.stop()` numa cena ja parada cai no
+ramo `sleep()` em vez de `shutdown()`, e `sleep()` nao dispara `destroy()`
+(README, item 18).
+
+**(d) Tipografia que so morre em producao.** A constante era declarada
+`JANELA_EXCLUCAO_MS` (19 chars) e usada como `JANELA_EXCLUCAUCO_MS` (20) —
+`ReferenceError` garantido, build verde. Achei pelo scanner de `testes/logica.mjs`.
+
+**(e) Grade fixa estourava o painel.** 10 slots x 220px em 4 colunas precisam
+944px; o painel dava 650. `calcularGrade()` calcula colunas e linhas pelo
+espaco disponivel.
+
+**(f) Deducao por nome em `CriacaoScene`.** O modo edicao era deduzido do nome
+do heroi — um heroi chamado literalmente "Viajante" era lido como "sem
+personagem". Agora respeita o flag `editando` explicito.
+
+### 5. Entrada em fila do Phaser (medido, nao deduzido)
+
+`InputManager.hitTest` **nao ordena** nada; `sortGameObjects` so roda no
+`processOverEvents`. A ordem de `POINTER_DOWN` e a **ordem de insercao** em
+`input._list`. Medido num botao do modal: `[slot, capa, botao]` — o slot do
+fundo primeiro. O primeiro a chamar `stopPropagation()` cancela os seguintes
+(`processDownEvents` quebra em `_eventData.cancelled`), ou seja o
+`stopPropagation` no objeto mais antigo mata o botao que esta na frente.
+
+A solucao adotada **nao** mexe na ordem:
+
+1. `input.enabled = false` em tudo que ja estava na tela enquanto o modal abre;
+2. a `capa` do modal e criada **por ultimo**, depois dos botoes.
+
+O mesmo padrao esta documentado no README (item 16) e o defeito equivalente
+existe em `StatusScene.js:180` e `TalentosScene.js:100`, que adicionam a `capa`
+**antes** dos botoes — la, clicar em qualquer botao do modal destroi o modal
+primeiro. **Nao corrigido aqui: fora do escopo desta versao.**
+
+### 6. Testes
+
+15 casos novos em `testes/logica.mjs`, secao `== exclusao com carencia ==`:
+pendente/vencido, borda de 30 dias (ms antes e depois), `diasRestantesExclusao`
+com 0/1/muitos dias, `personagemJogavel` para heroi livre, congelado e vencido,
+o cancelamento limpando `exclusaoAgendadaEm`, a purga removendo so os vencidos,
+relogio valendo a carencia mesmo depois de `criarPersonagem`, e o estado limpo
+de `criarPersonagem`.
+
+### Verificacao em navegador
+
+Percorrido o CRUD inteiro com o `window.__game` do dev server: criar (grava e
+volta ao salao com mensagem), editar (modo edicao ativo, nome/raca/vocacao
+grava), excluir (agenda, persiste, mostra `EXCLUIXDO EM 18 DIAS`), cancelar
+(resgata), purga (some o que venceu 30 dias, com aviso), limite de 10 (11o
+heroi mostra "Limite de 10 herois atingido"), heroi congelado sem
+`ENTRAR NO MUNDO`, clique no cartao abrindo a confirmacao e `World` ativa com o
+heroi certo.
