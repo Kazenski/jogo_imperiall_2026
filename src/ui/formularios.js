@@ -649,7 +649,7 @@ function campoImagem(scene, container, cfg) {
     altura: bAltura,
     tamanho: '12px',
   });
-  container.add(btnEnviar.caixa);
+  container.add(btnEnviar.container);
 
   const btnLimpar = botao(scene, bx + bLarg / 2, y + 16 + bAltura + 6 + bAltura / 2, 'Remover imagem', () => {
     atual = '';
@@ -667,7 +667,7 @@ function campoImagem(scene, container, cfg) {
     corHover: 0x4a3828,
     corTexto: '#c9a05a',
   });
-  container.add(btnLimpar.caixa);
+  container.add(btnLimpar.container);
 
   // --- campo de URL ---
   const dom = criarElementoDom(scene, {

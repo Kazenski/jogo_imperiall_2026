@@ -414,7 +414,49 @@ porque voltam.
 10. **Injetar eventos de teclado num `<input>` do DOM** sem
     `ev.stopPropagation()` faz "i" abrir a Mochila enquanto se digita.
 
----
+11. **`Graphics.setInteractive()` sem hit area explícito é veneno.** Não é um
+    no-op silencioso — é pior. Como `Graphics` não tem o componente `Size`,
+    `width`/`height` são `undefined`, `setHitAreaFromTexture()` não consegue
+    montar o retângulo, e mesmo assim o objeto **entra na lista de input** com
+    `hitArea = null` e `hitAreaCallback = null`. Aí todo `pointWithinHitArea()`
+    estoura com `TypeError: input.hitAreaCallback is not a function`, e como
+    `hitTest()` não captura a exceção, **o input inteiro da cena morre** — não
+    só aquele botão. Use um `Rectangle`, ou passe `hitArea`/`hitAreaCallback`
+    explícitos. Foi o defeito por trás de "nenhum botão do jogo funciona".
+
+12. **Nunca use `setOrigin()` para reposicionar um `Container`.** A origem de
+    um `Container` desloca a posição de **todos** os filhos. Para ancorar um
+    `Container` já montado, passe a opção `origem` para `botao()` /
+    `caixaArredondada()` — que calculam `dx`/`dy` na criação.
+
+    E note que `setOrigin()` em um `Graphics` **também não redesenha o que já
+    foi desenhado**: `fillRoundedRect()` grava coordenadas absolutas no buffer e
+    `setOrigin()` só muda o ponto de referência do input. O `origem` que
+    importa é o da criação, não o posterior.
+
+13. **Distinga "o botão" de "o fundo do botão" na hora de adicionar.** Todo
+    helper de UI que devolve um objeto composto precisa dizer qual campo é a
+    coisa que se **adiciona a um container** e qual é o que se **desenha em**.
+    `botao()` expõe `container` (o botão inteiro, para `pai.add(...)`) e `caixa`
+    (o `Graphics` de fundo, para `definirVisual()` / `.clear()`). Passar o
+    errado não dá erro — `Container.addHandler()` re-fila o objeto mantendo a
+    posição local `(0, 0)`, e ele aparece grudado no canto da tela com o texto
+    certainos. Segundo defeito do mesmo hotfix.
+
+14. **`setDepth()` não conserta um objeto que não está na lista de input.**
+    Criar o interativo *antes* dos modais é o que importa. E a lista de input é
+    ordenada por **ordem de inserção** (`queueForInsertion` → `preUpdate`),
+    **não por depth**; `processDownEvents` emite `POINTER_DOWN` em todos os
+    objetos sob o ponteiro. Uma capa modal registrada *antes* do botão e que
+    tenha o próprio `pointerdown` roda junto — foi o que fez o "Cancelar" do
+    modal de apagar personagem (`LobbyScene`) disparar e fechar ao mesmo tempo.
+
+15. **`npm test` não pega bug de input, e `npm run build` verde não diz nada
+    sobre runtime.** O pacote de testes roda lógica pura em Node e nunca importa
+    o Phaser. Um bug que derrubou 100% da interação passou por 8 commits e por
+    todos os gates de CI. Diagnóstico de bug de UI exige rodar o jogo e ler o
+    console — se não há asserção quebrada e o build passa, **o browser é a
+    única fonte da verdade**.
 
 ## Arquitetura de Servidores
 

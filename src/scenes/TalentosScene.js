@@ -128,9 +128,9 @@ export class TalentosScene extends Phaser.Scene {
         const devolvidos = redefinirArvore(this.estado, this.catalogo);
         this.mostrarToast(`${devolvidos} pontos devolvidos.`);
         this.desenhar();
-      }, { largura: 180, cor: 0xc96a5a, corHover: 0xd05a5a, corTexto: '#fff' }).caixa,
+      }, { largura: 180, cor: 0xc96a5a, corHover: 0xd05a5a, corTexto: '#fff' }).container,
     );
-    this.arvore.add(botao(this, width - 90, 34, 'Fechar [T]', () => this.fechar(), { largura: 120 }).caixa);
+    this.arvore.add(botao(this, width - 90, 34, 'Fechar [T]', () => this.fechar(), { largura: 120 }).container);
 
     if (!this.estado.vocacaoId) return this.desenharEscolhaDeVocacao();
     this.desenharArvore();
@@ -162,7 +162,7 @@ export class TalentosScene extends Phaser.Scene {
         this.desenhar();
       }, { largura: 420, altura: 40, tamanho: '14px' });
 
-      this.arvore.add(b.caixa);
+      this.arvore.add(b.container);
       this.arvore.add(
         uiTexto(this, width / 2 + 230, y, `${c.descricao ?? ''}`.slice(0, 44), {
           fontSize: '11px',
@@ -580,7 +580,7 @@ export class TalentosScene extends Phaser.Scene {
           cor: disponivel ? 0xd4af6a : 0x4a3a28,
           corHover: disponivel ? 0xe6c47c : 0x4a3a28,
           corTexto: disponivel ? '#14100c' : PERGAMINHO,
-        }).caixa,
+        }).container,
       );
     }
 
@@ -596,7 +596,7 @@ export class TalentosScene extends Phaser.Scene {
         corHover: 0x4a3828,
         corBorda: 0x8a6a2f,
         corTexto: PERGAMINHO,
-      }).caixa,
+      }).container,
     );
 
     capa.on('pointerdown', () => {

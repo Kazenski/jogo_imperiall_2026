@@ -159,7 +159,7 @@ export class AjudaScene extends Phaser.Scene {
         corHover: 0x3a2c20,
         corBorda: 0x8a6a2f,
         corTexto: PERGAMINHO,
-      }).caixa,
+      }).container,
     );
 
     this.montarBusca(x0 + 24, y0 + 66, w - 48);
@@ -236,7 +236,7 @@ export class AjudaScene extends Phaser.Scene {
         corTexto: ativo ? '#14100c' : PERGAMINHO,
         alinhamento: 'left',
       });
-      this.raiz.add(b.caixa);
+      this.raiz.add(b.container);
       ly += 30;
     }
 
@@ -336,7 +336,7 @@ export class AjudaScene extends Phaser.Scene {
         corTexto: ativo ? OURO : PERGAMINHO,
         alinhamento: 'left',
       });
-      this.raiz.add(b.caixa);
+      this.raiz.add(b.container);
       ly += alturaLinha;
     }
 

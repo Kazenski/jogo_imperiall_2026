@@ -102,7 +102,7 @@ export class TermosScene extends Phaser.Scene {
         corBorda: 0x8a6a2f,
         corTexto: ativa ? '#14100c' : PERGAMINHO,
       });
-      this.raiz.add(b.caixa);
+      this.raiz.add(b.container);
       ax += bw + 8;
     }
 
@@ -193,7 +193,7 @@ const mascara = this.make.graphics({ x: 0, y: 0 }, false);
       altura: 36,
       tamanho: '13px',
     });
-    this.raiz.add(btnAceitar.caixa);
+    this.raiz.add(btnAceitar.container);
 
     const btnSair = botao(this, cbx - 110, yAcao, 'Não aceitar', () => this.voltarAoLogin(), {
       largura: 200,
@@ -204,7 +204,7 @@ const mascara = this.make.graphics({ x: 0, y: 0 }, false);
       corBorda: 0x8a6a2f,
       corTexto: PERGAMINHO,
     });
-    this.raiz.add(btnSair.caixa);
+    this.raiz.add(btnSair.container);
 
     // Texto "Ao aceitar..." - fica ACIMA dos botoes, com padding do painel.
     // Antes estava em yAcao + 30 = y0 + h - 10, ou seja, COLADO na borda

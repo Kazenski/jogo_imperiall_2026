@@ -145,7 +145,7 @@ export class FabricacaoScene extends Phaser.Scene {
 
     // Rodapé
     this.raiz.add(
-      botao(this, x0 + w - 110, y0 + h - 30, 'Fechar  [C / ESC]', () => this.fechar(), { largura: 200, altura: 32 }).caixa,
+      botao(this, x0 + w - 110, y0 + h - 30, 'Fechar  [C / ESC]', () => this.fechar(), { largura: 200, altura: 32 }).container,
     );
   }
 
@@ -166,7 +166,7 @@ export class FabricacaoScene extends Phaser.Scene {
       corBorda: ativa ? 0x8a6a2f : 0x3a2c20,
       corTexto: ativa ? '#14100c' : PERGAMINHO,
     });
-    return b.caixa;
+    return b.container;
   }
 
   // ---------- lista ----------
@@ -361,7 +361,7 @@ export class FabricacaoScene extends Phaser.Scene {
         cor: chk.ok ? 0xd4af6a : 0x4a3a28,
         corHover: chk.ok ? 0xe6c47c : 0x4a3a28,
         corTexto: chk.ok ? '#14100c' : PERGAMINHO,
-      }).caixa,
+      }).container,
     );
   }
 

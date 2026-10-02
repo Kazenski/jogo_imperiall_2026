@@ -151,7 +151,7 @@ export class CriacaoScene extends Phaser.Scene {
       () => this.concluir(),
       { largura: 220, altura: 36, tamanho: '14px' },
     );
-    this.raiz.add(btnEntrar.caixa);
+    this.raiz.add(btnEntrar.container);
 
     const btnVoltar = botao(
       this,
@@ -169,7 +169,7 @@ export class CriacaoScene extends Phaser.Scene {
         corTexto: PERGAMINHO,
       },
     );
-    this.raiz.add(btnVoltar.caixa);
+    this.raiz.add(btnVoltar.container);
   }
 
   // ---------- coluna esquerda: identidade ----------

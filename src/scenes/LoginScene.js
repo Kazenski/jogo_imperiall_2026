@@ -141,7 +141,7 @@ export class LoginScene extends Phaser.Scene {
   avisarStatus(msg) {
     if (!this.sys?.isActive()) return;
     try {
-      this.avisarStatus(msg);
+      this.status?.setText(msg ?? '');
     } catch {
       /* a cena caiu entre o teste e a escrita: não há mais tela para avisar */
     }

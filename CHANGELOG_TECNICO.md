@@ -11,6 +11,223 @@ Formato inspirado em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/)
 
 ---
 
+## [0.1.1] — Hotfix: input e posicionamento de botões
+
+*Outubro de 2026*
+
+Regressão de input introduzida em `7fb5351` ("fix(button): depth priority +
+caixa graphics fix"), que ficou **8 commits sem ninguém perceber** — porque
+vários commits posteriores acusaram "tree-shaking" e "cache do Vite", que não
+tinham nada a ver. O bug só era visível no navegador, nunca no build.
+
+### Sintoma reportado
+
+Botões desenhados mas sem clique. "Manter como está" inerte. Login impossível.
+Caixa do botão colada no canto superior esquerdo enquanto o texto ficava no
+lugar. Nenhuma mensagem de status aparecia.
+
+### Causa raiz 1 — `Graphics` não aceita `setInteractive()` sem hit area
+
+`src/ui/comuns.js::botao()` fazia:
+
+```js
+box.caixa.setInteractive({ useHandCursor: true });   // caixa = Graphics
+```
+
+`Graphics` **não tem o componente `Size`** na lista de `Mixins` do construtor
+do Phaser 3.90. Logo `gameObject.width` e `gameObject.height` são `undefined`,
+e `gameObject.frame` também não existe.
+
+O que realmente acontece dentro de `InputPlugin.setHitArea()` (Phaser 3.90):
+
+```js
+var hitArea       = GetFastValue(config, 'hitArea', null);
+var hitAreaCallback = GetFastValue(config, 'hitAreaCallback', null);
+
+if (!hitArea || !hitAreaCallback)
+{
+    //  If the object has no hit area, use the texture to make one
+    this.setHitAreaFromTexture(gameObjects);
+    customHitArea = false;
+}
+//  <-- setHitAreaFromTexture NÃO escreve de volta nas variáveis locais acima
+```
+
+`setHitAreaFromTexture()` preenche o `width`/`height` de um objeto **externo**
+passado por referência — mas aqui a chamada foi feita sem argumento
+(`gameObjects` do closure), então o resultado é descartado. O laço continua com
+`hitArea === null` e `hitAreaCallback === null` e faz:
+
+```js
+var io = CreateInteractiveObject(gameObject, hitArea, hitAreaCallback);
+gameObject.input = io;
+this.queueForInsertion(gameObject);   // <-- ENTRA na lista mesmo assim
+```
+
+Medido em runtime, não deduzido:
+
+```
+Graphics setInteractive -> input? true | width: undefined | height: undefined | frame: undefined
+Graphics -> hitArea: null | hitAreaCallback: null
+Graphics quebrado chegou na lista de input? true
+```
+
+O objeto **é registrado**, com `hitArea = null` e `hitAreaCallback = null`. Aí
+todo `InputManager.pointWithinHitArea()` estoura:
+
+```js
+if (input && input.hitAreaCallback(input.hitArea, x, y, gameObject))
+//     ^^^^^^^^^^^^^^^^^^^^^^^ TypeError: input.hitAreaCallback is not a function
+```
+
+Como `InputManager.hitTest()` itera `this._list` e a exceção **não é capturada
+em lugar nenhum**, o `TypeError` aborta o hit test inteiro. O efeito real é
+**pior que "o botão não responde"**: *o input da cena inteira deixa de
+responder*, e nenhum objeto sob o ponteiro recebe evento nenhum. Era por isso
+que nada funcionava em lugar nenhum — e por isso o console do jogo estava
+cheio de `TypeError` que ninguém ligou ao problema.
+
+**`setDepth(1000)` não podia consertar isso.** O `depth` nunca foi o problema:
+o objeto não precisava de prioridade, precisava de um `hitAreaCallback` que
+existe. O hack de side-effect (`box.caixa.depth = 1000;
+box.caixa.setDepth(box.caixa.depth)`) existia só para "evitar tree-shaking", que
+também não era a causa.
+
+**Ordem de inserção na lista de input:** `_list` é ordenada por
+`queueForInsertion` (concatenação em `preUpdate`), **não por depth**. Ou seja,
+em conflito de sobreposição (uma `capa` modal adicionada antes do botão), quem
+recebe o evento primeiro é quem foi registrado primeiro. `processDownEvents`
+emite `POINTER_DOWN` em **todos** os objetos sob o ponteiro e só usa `topOnly`
+para interromper — então uma capa sem handler próprio é inofensiva, mas uma
+capa **com** handler (ex.: o "Cancelar" do modal de apagar personagem em
+`LobbyScene.js:475`) roda junto com o botão.
+
+### Causa raiz 2 — `.caixa` devolvia o `Graphics`, não o botão
+
+`botao()` passou a retornar `caixa: box.caixa` (o `Graphics` de fundo) em vez
+do container inteiro. Todos os ~35 pontos de chamada fazem
+`pai.add(b.caixa)` / `this.raiz.add(btn.caixa)`.
+
+`Container.add()` chama `addHandler()`, que tira o objeto do container anterior
+e o re-filha mantendo a **posição local** `(0, 0)`. Como todas as cenas usam
+`this.raiz = this.add.container(0, 0)`, o `Graphics` saía do container do botão
+e passava a ser desenhado a partir do `(0, 0)` da tela, enquanto o `label`
+continuava ancorado no lugar certo. Daí o sintoma "textos certainos e caixas
+grudadas no canto".
+
+### Causa raiz 3 — recursão infinita em `LoginScene.avisarStatus()`
+
+```js
+avisarStatus(msg) {
+  if (!this.sys?.isActive()) return;
+  try {
+    this.avisarStatus(msg);        // chama a si mesma
+  } catch { /* ... */ }
+}
+```
+
+A `try` não estourava nada: a recursão batia no `if (!this.sys?.isActive())`
+antes de acumular stack. Efeito: nenhuma mensagem de status ou erro era
+exibida no login.
+
+### Correções
+
+**`src/ui/comuns.js::botao()`** — voltou a zona de clique explícita:
+
+```js
+const clique = scene.add
+  .rectangle(0, 0, largura, altura, 0xffffff, 0)
+  .setOrigin(0, 0)
+  .setPosition(dx, dy)
+  .setInteractive({ useHandCursor: true });
+box.add(clique);
+
+clique.on('pointerover', () => aplicarCor(corHover));
+clique.on('pointerout',  () => aplicarCor(cor));
+clique.on('pointerdown', onClick);
+```
+
+`Rectangle` tem largura/altura de verdade, então `setHitAreaFromTexture()`
+monta o retângulo e `Rectangle.Contains` corretamente. Os eventos foram
+remontados para `clique` (no `Graphics`, ligavam mas nunca disparavam). O hack
+de `depth = 1000` foi removido.
+
+**Contrato de `botao()`** — o retorno documenta a semântica dos dois campos, e
+`clique` foi **reativado** (o `WorldScene.js:771` já dependia dele):
+
+| Campo | Tipo | Usar para |
+| --- | --- | --- |
+| `container` | `Container` | **`pai.add(...)`** — o botão inteiro |
+| `caixa` | `Graphics` | **desenhar** — `definirVisual()`, `.clear()`, `.fillStyle()` |
+| `clique` | `Rectangle` | eventos extras (`WorldScene` usa para tooltips) |
+| `label` | `Text` | `setTexto()` |
+
+**`fluxoBotoes`** — `pai.add(b.container)`.
+
+**13 arquivos de cena** — `add(b.caixa)` → `add(b.container)` em ~35 pontos
+(`AdminScene`, `AjudaScene`, `CriacaoScene`, `FabricacaoScene`,
+`InventarioScene`, `LobbyScene`, `ReinosScene`, `StatusScene`, `TalentosScene`,
+`TermosScene`, `WorldScene`, `src/ui/formularios.js`). Também
+`setDepth`/`destroy` de botão passaram a ser no `container` (o `depth` de filho
+dentro de container é ignorado).
+
+**`LoginScene.avisarStatus()`** — `this.avisarStatus(msg)` → `this.status?.setText(msg ?? '')`.
+
+**`LobbyScene`** — removido `.container.setOrigin(1, 0)` / `(0.5, 0)` inválido
+(origem de `Container` desloca **todos** os filhos); substituído pela opção
+`origem` que `caixaArredondada` já respeita via `dx`/`dy`.
+
+### Bug adjacente encontrado, NÃO corrigido
+
+`src/scenes/ReinosScene.js:62`:
+
+```js
+item.caixa.setFillStyle(0x181310);
+```
+
+`item` vem de `linhaLista()`, cujo `.caixa` é um **`Container`** — e `Container`
+não tem `setFillStyle`. Vai estourar `TypeError` sempre que o jogador alcançar
+um reino ainda não liberado. É a mesma confusão de semântica de `.caixa` que
+causou esta regressão, mas é um caminho de código diferente e a correção exige
+repintar o `Graphics` corretamente, não só trocar o nome do campo.
+
+### Verificação
+
+Não houve verificação visual — o modelo não lê imagens. A prova foi feita
+instrumentando o jogo real no navegador e lendo o console:
+
+```
+[DIAG] Graphics -> hitArea: null | hitAreaCallback: null
+[DIAG] botao -> hitArea: 280x52
+[DIAG] apos pai.add(container) -> caixa continua dentro do container? true | posicao: 450 208
+[DIAG] hitTest no CENTRO do botao (450,208) -> zona incluida? true
+[DIAG] hitTest no (10,10) -> Array(0)
+[DIAG] >>> CLIQUE CHEGOU
+```
+
+`npm run build` limpo e `npm test` passando (incluindo o bloco de "chamadas
+para funções inexistentes", que pegaria `b.clique` ausente se ele fosse
+chamado em módulo avaliado em Node).
+
+### Lição para o processo
+
+**`npm test` não pega bug de input.** O pacote de testes roda lógica pura em
+Node; Phaser nunca é importado. Um bug que derrubou 100% da interação do jogo
+passou por 8 commits e por todos os gates de CI.
+
+Duas lições específicas:
+
+1. **`npm run build` verde não significa nada sobre runtime.** Vários commits
+  USParam "forçar rebuild" / "limpar cache do Vite" / "timestamp de build"
+   no `vite.config.js` e no workflow, com a mensagem de que a causa era
+   tree-shaking. **Não era.** O sintoma era 100% reproduzível localmente com
+   `npm run dev`; o diagnóstico exigiria rodar o jogo e olhar o console.
+2. **Teste de regressão que teria pegado isto:** um teste estático que rode
+   `setInteractive` em cada GameObject criado e falha se o `input.hitAreaCallback`
+   ficar `null`. Barato, e pega o erro na hora da escrita.
+
+---
+
 ## [Não publicado] — Base editorial, conformidade e melhorias de gameplay
 
 Estado atual do repositório: **não commitado, não publicado**. Tudo abaixo

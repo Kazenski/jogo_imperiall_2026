@@ -596,7 +596,7 @@ export class WorldScene extends Phaser.Scene {
       corTexto: PERGAMINHO,
       tamanho: '11px',
     });
-    this.hud.add(this.botaoAjuda.caixa);
+    this.hud.add(this.botaoAjuda.container);
 
     this.toast = uiTexto(this, this.scale.width / 2, 110, '', {
       fontSize: '14px',
@@ -700,7 +700,7 @@ export class WorldScene extends Phaser.Scene {
       botao(this, x0 + w / 2 - 100, y + 16, 'Abrir a Wiki do Imperio', () => {
         this.fecharModal();
         this.abrirAjuda();
-      }, { largura: 240, altura: 32, tamanho: '12px', cor: 0x2a2018, corHover: 0x3a2c20, corBorda: 0x8a6a2f, corTexto: PERGAMINHO }).caixa,
+      }, { largura: 240, altura: 32, tamanho: '12px', cor: 0x2a2018, corHover: 0x3a2c20, corBorda: 0x8a6a2f, corTexto: PERGAMINHO }).container,
     );
 
     box.add(
@@ -708,7 +708,7 @@ export class WorldScene extends Phaser.Scene {
         largura: 140,
         altura: 30,
         tamanho: '12px',
-      }).caixa,
+      }).container,
     );
 
     capa.on('pointerdown', () => this.fecharModal());
@@ -771,7 +771,7 @@ export class WorldScene extends Phaser.Scene {
       b.clique.on('pointerover', () => this.mostrarTooltip(acao.rotulo, acao.tecla, i - 1));
       b.clique.on('pointerout', () => this.esconderTooltip());
 
-      this.barraAcoes.add(b.caixa);
+      this.barraAcoes.add(b.container);
       this.botoesMenu.push(b);
     }
 
@@ -1367,7 +1367,7 @@ export class WorldScene extends Phaser.Scene {
     }
 
     this.painel.add(
-      botao(this, width / 2, height / 2 + h / 2 - 26, 'Fechar', () => this.fecharPaineis()).caixa,
+      botao(this, width / 2, height / 2 + h / 2 - 26, 'Fechar', () => this.fecharPaineis()).container,
     );
   }
 

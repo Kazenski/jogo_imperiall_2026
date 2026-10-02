@@ -70,6 +70,10 @@ export class LobbyScene extends Phaser.Scene {
 
     // Botão fechar (só no modo local, para voltar ao login)
     if (!this.uid) {
+      // `origem: [1, 0]` ancora o botao pelo canto superior direito.
+      // Nao use `.setOrigin(1, 0)` no container: a origem de um Container
+      // desloca a posicao de TODOS os filhos, o que empurraria o botao por
+      // cima da propria largura/altura.
       this.raiz.add(
         botao(this, x0 + panelW - 24, y0 + 24, 'Voltar ao Login [ESC]', () => this.voltarLogin(), {
           largura: 180,
@@ -78,7 +82,8 @@ export class LobbyScene extends Phaser.Scene {
           cor: 0x3a2c20,
           corHover: 0x4a3828,
           corTexto: PERGAMINHO,
-        }).caixa.setOrigin(1, 0),
+          origem: [1, 0],
+        }).container,
       );
     }
 
@@ -105,7 +110,7 @@ export class LobbyScene extends Phaser.Scene {
           cor: 0x8a6a2f,
           corHover: 0x9a7a3f,
           corTexto: PERGAMINHO,
-        }).caixa.setOrigin(0.5),
+        }).container,
       );
     }
 
@@ -342,9 +347,13 @@ export class LobbyScene extends Phaser.Scene {
       corTexto: estilo.corTexto ?? PERGAMINHO,
       corBorda: estilo.corBorda ?? 0x7a4fd4,
       raio: 6,
+      // Ancora pelo topo. Antes era `b.caixa.setOrigin(0.5, 0)`, que nao
+      // reposicionava nada: o `Graphics` ja estava desenhado nas coords
+      // (dx, dy) que o `caixaArredondada` calculou a partir do `origem`.
+      // Quem decide o deslocamento e o `origem`, nao o `setOrigin`.
+      origem: [0.5, 0],
     });
-    b.caixa.setOrigin(0.5, 0);
-    return b.caixa;
+    return b.container;
   }
 
   criarSlotVazio(x, y) {
@@ -490,10 +499,10 @@ export class LobbyScene extends Phaser.Scene {
       await this.apagarPersonagem(char.id);
       modal.destroy();
       this.redesenhar();
-    }, { largura: 110, cor: 0x7a2f2a, corHover: 0x9a3a33, corTexto: '#ffe6e0' }).caixa;
+    }, { largura: 110, cor: 0x7a2f2a, corHover: 0x9a3a33, corTexto: '#ffe6e0' }).container;
 
     const bNao = botao(this, x0 + w/2 + 70, y0 + h - 40, 'Cancelar', () => modal.destroy(),
-      { largura: 110, cor: 0x3a2c20, corHover: 0x4a3828, corTexto: PERGAMINHO }).caixa;
+      { largura: 110, cor: 0x3a2c20, corHover: 0x4a3828, corTexto: PERGAMINHO }).container;
 
     modal.add([bSim, bNao]);
     capa.on('pointerdown', () => modal.destroy());

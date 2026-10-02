@@ -6,9 +6,37 @@ Para o registro de código, veja [`CHANGELOG_TECNICO.md`](CHANGELOG_TECNICO.md).
 Este jogo está em desenvolvimento aberto. Se encontrar algo quebrado, o
 caminho mais rápido é relatar com o que você estava fazendo na tela.
 
---- 
+---
 
-## Atualização — Mundo maior, portal seu, itens que fazem sentido
+## Correção — os botões voltaram a funcionar
+
+*v0.1.1 · Outubro de 2026*
+
+Esta é uma correção de emergência. Se você não entrou no jogo na última
+implantação, **esta versão resolve**.
+
+### O que estava quebrado
+
+- **Nenhum botão do jogo respondia.** Não era só o login: era qualquer coisa
+  que precisasse de clique — Mochila, Talentos, Admin, tudo.
+- **As caixas dos botões apareciam grudadas no canto da tela**, separadas do
+  texto, enquanto o nome do botão ficava no lugar certo.
+- **O botão "Manter como está"** (na tela de criação do personagem) não
+  respondia.
+- **Não aparecia nenhuma mensagem** ao tentar logar — nem erro, nem aviso.
+
+### O que fazer
+
+Nada. É só recarregar a página. Se o navegador ainda mostrar a versão velha,
+force a atualização (Ctrl+Shift+R no Windows, Cmd+Shift+R no Mac) — o jogo
+guarda a versão antiga em cache.
+
+O registro técnico do problema está em
+[`CHANGELOG_TECNICO.md`](CHANGELOG_TECNICO.md).
+
+---
+
+## Atualização — Mundo maior, portal seu, itens que faz sentido
 
 *Outubro de 2026*
 

@@ -672,7 +672,7 @@ export class InventarioScene extends Phaser.Scene {
         largura: LADO,
         altura: ALTO,
         ...corSeta,
-      }).caixa,
+      }).container,
     );
     this.detalhe.add(
       uiTexto(this, centro(xContador, larguraContador), yCentro, `${this.quantiaLargar} de ${pilha.qtd}`, {
@@ -687,7 +687,7 @@ export class InventarioScene extends Phaser.Scene {
         largura: LADO,
         altura: ALTO,
         ...corSeta,
-      }).caixa,
+      }).container,
     );
     this.detalhe.add(
       botao(
@@ -703,7 +703,7 @@ export class InventarioScene extends Phaser.Scene {
           corHover: 0xd05a5a,
           corTexto: '#fff',
         },
-      ).caixa,
+      ).container,
     );
 
     // "tudo" so faz sentido quando sobrou mais de uma unidade.
@@ -717,7 +717,7 @@ export class InventarioScene extends Phaser.Scene {
           cor: 0x5a3a30,
           corHover: 0x6a4438,
           corTexto: '#e8c0b8',
-        }).caixa,
+        }).container,
       );
     }
   }
@@ -867,16 +867,16 @@ export class InventarioScene extends Phaser.Scene {
         const fundidas = agruparItens(this.estado.inventario, this.catalogo);
         this.toast(fundidas > 0 ? `${fundidas} pilha(s) agrupada(s).` : 'Nada para agrupar.');
         this.redesenhar();
-      }, { largura: 110, cor: 0x8a6a2f, corHover: 0x9a7a3f, corTexto: PERGAMINHO }).caixa,
+      }, { largura: 110, cor: 0x8a6a2f, corHover: 0x9a7a3f, corTexto: PERGAMINHO }).container,
     );
     this.add.existing(
       botao(this, centro + 90, y, 'Salvar', async () => {
         await this.salvar();
         this.fechar();
-      }, { largura: 140, cor: 0x8fd18f, corHover: 0xa8e5a8 }).caixa,
+      }, { largura: 140, cor: 0x8fd18f, corHover: 0xa8e5a8 }).container,
     );
     this.add.existing(
-      botao(this, centro - 90, y, 'Fechar', () => this.fechar(), { largura: 160 }).caixa,
+      botao(this, centro - 90, y, 'Fechar', () => this.fechar(), { largura: 160 }).container,
     );
   }
 

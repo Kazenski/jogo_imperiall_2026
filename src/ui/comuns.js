@@ -169,12 +169,40 @@ export function botao(scene, x, y, rotulo, onClick, opcoes = {}) {
   const dy = box.deslocamento.dy;
   box.caixa.setAlpha(alfa);
 
-  // Torna o próprio Graphics interativo (em vez de um retângulo separado).
-  // Depth alto (1000) para ter prioridade de input sobre fundos (depth 0).
-  box.caixa.setInteractive({ useHandCursor: true });
-  // Força o depth via side-effect para evitar tree-shaking.
-  box.caixa.depth = 1000;
-  box.caixa.setDepth(box.caixa.depth);
+  // Zona de clique: um retangulo invisivel dentro do container.
+  //
+  // NAO da para tornar o proprio `Graphics` interativo. `Graphics` nao tem
+  // componente de tamanho no Phaser (na lista de Mixins do construtor nao ha
+  // `Size`), entao `width`/`height` ficam `undefined` e `frame` tambem nao
+  // existe. `setInteractive({...})` sem hit area explicito entra em
+  // `InputPlugin.setHitArea()`, que chama `setHitAreaFromTexture()` e depois
+  // continua o laco com as variaveis `hitArea`/`hitAreaCallback` AINDA `null`:
+  //
+  //     if (!hitArea || !hitAreaCallback) { setHitAreaFromTexture(...); }
+  //     ...
+  //     var io = CreateInteractiveObject(gameObject, hitArea, hitAreaCallback);
+  //     this.queueForInsertion(gameObject);
+  //
+  // Ou seja: o objeto entra na lista de input com `hitArea = null` e
+  // `hitAreaCallback = null`. Aí todo `InputManager.pointWithinHitArea()` estoura
+  // com
+  //
+  //     TypeError: input.hitAreaCallback is not a function
+  //
+  // e o `hitTest` inteiro aborta — nao e so este botao que morre, e o input da
+  // CENA INTEIRA que deixa de responder (por isso nenhum clique funcionava em
+  // lugar nenhum). Medido em runtime: `hitArea: null, hitAreaCallback: null`.
+  //
+  // `setDepth(1000)` nao ajuda em nada: o problema nao e prioridade, e o objeto
+  // estar registered com um callback nulo. Um `Rectangle` tem largura/altura de
+  // verdade, entao `setHitAreaFromTexture()` monta o `Rectangle` e o
+  // `Rectangle.Contains` corretamente.
+  const clique = scene.add
+    .rectangle(0, 0, largura, altura, 0xffffff, 0)
+    .setOrigin(0, 0)
+    .setPosition(dx, dy)
+    .setInteractive({ useHandCursor: true });
+  box.add(clique);
 
   // Posicionamento do conteudo dentro da caixa.
   const tamanhoIcone = icone?.tamanho ?? 22;
@@ -219,14 +247,30 @@ export function botao(scene, x, y, rotulo, onClick, opcoes = {}) {
   };
   aplicarCor(cor);
 
-  // Eventos no próprio Graphics (que agora é interativo)
-  box.caixa.on('pointerover', () => aplicarCor(corHover));
-  box.caixa.on('pointerout', () => aplicarCor(cor));
-  box.caixa.on('pointerdown', onClick);
+  // Eventos na zona de clique (a unica parte realmente interativa).
+  //
+  // No `Graphics` dava para ligar, mas nunca disparava. No `clique` funciona —
+  // e `WorldScene` ja usava `b.clique` para as dicas do menu lateral.
+  clique.on('pointerover', () => aplicarCor(corHover));
+  clique.on('pointerout', () => aplicarCor(cor));
+  clique.on('pointerdown', onClick);
 
   return {
+    // `caixa` e o Graphics de fundo. Use para DESENHAR (`definirVisual()`,
+    // `caixa.clear()`, hover) — nunca para adicionar a um container pai.
     caixa: box.caixa,
+    // `container` e o botao INTEIRO (fundo + zona de clique + rotulo). E este
+    // que deve ser passado para `pai.add(...)` / `raiz.add(...)`.
+    //
+    // Passar `caixa` aqui e o que jogava o botao para o canto superior
+    // esquerdo: `Container.add()` chama `addHandler`, que tira o objeto do
+    // container anterior e o re-filha mantendo a posicao local `(0, 0)`. O
+    // Graphics saia do container do botao e passava a ser desenhado a partir
+    // do `(0, 0)` do pai, enquanto o rotulo continuava no lugar certo — dai o
+    // texto no meio da tela e a caixa grudada no topo esquerdo.
     container: box,
+    clique,
+    label,
     // Aliases para quem esperava um Rectangle (.width/.height do GameObject).
     width: largura,
     height: altura,
@@ -302,7 +346,9 @@ export function fluxoBotoes(pai, x, y, larguraUtil, botoes, opcoes = {}) {
       corTexto: item.corTexto,
       corBorda: item.corBorda,
     });
-    pai.add(b.caixa);
+    // O botao INTEIRO: passar `b.caixa` (o Graphics) arrancaria o fundo do
+    // container do botao e o draw no (0,0) do pai — canto superior esquerdo.
+    pai.add(b.container);
     cx += largura + vao;
     usado += 1;
   }

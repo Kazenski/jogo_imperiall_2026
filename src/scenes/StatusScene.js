@@ -334,7 +334,7 @@ export class StatusScene extends Phaser.Scene {
       corTexto: PERGAMINHO,
       raio: 4,
     });
-    this.raiz.add(b.caixa);
+    this.raiz.add(b.container);
     return y + 26;
   }
 
@@ -426,7 +426,7 @@ export class StatusScene extends Phaser.Scene {
       corBorda: 0xa04a42,
       corTexto: '#ffe6e0',
     });
-    camada.add(btnApagar.caixa);
+    camada.add(btnApagar.container);
 
     const btnCancelar = botao(this, x0 + w / 2 + 95, y0 + h - 32, 'Cancelar', fechar, {
       largura: 170,
@@ -437,7 +437,7 @@ export class StatusScene extends Phaser.Scene {
       corBorda: 0x8a6a2f,
       corTexto: PERGAMINHO,
     });
-    camada.add(btnCancelar.caixa);
+    camada.add(btnCancelar.container);
 
     capa.on('pointerdown', fechar);
     this._modalApagar = camada;

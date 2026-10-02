@@ -511,7 +511,7 @@ export class AdminScene extends Phaser.Scene {
       this.deslocLista = 0;
       this.redesenhar();
     }, { largura: this.linhaLista - 32, altura: 32, tamanho: '13px' });
-    this.camada.add(btnNovo.caixa);
+    this.camada.add(btnNovo.container);
 
     // ----- right column: form -----
     if (this.selecionado?.aba?.id === aba.id) {
@@ -714,8 +714,8 @@ export class AdminScene extends Phaser.Scene {
       corTexto: PERGAMINHO,
     });
 
-    btnSim.caixa.setDepth(MODAL_DEPTH + 2);
-    btnNao.caixa.setDepth(MODAL_DEPTH + 2);
+    btnSim.container.setDepth(MODAL_DEPTH + 2);
+    btnNao.container.setDepth(MODAL_DEPTH + 2);
 
     const fechar = () => {
       fundo.destroy();
@@ -723,8 +723,8 @@ export class AdminScene extends Phaser.Scene {
       t1.destroy();
       t2.destroy();
       t3.destroy();
-      btnSim.caixa.destroy(true);
-      btnNao.caixa.destroy(true);
+      btnSim.container.destroy(true);
+      btnNao.container.destroy(true);
       this.status('');
     };
   }
@@ -834,13 +834,13 @@ export class AdminScene extends Phaser.Scene {
       () => this.salvar(campos, aba, item, refs),
       { largura: 180, altura: 34, tamanho: '13px' },
     );
-    this.camada.add(btnSalvar.caixa);
+    this.camada.add(btnSalvar.container);
 
     const btnCancelar = botao(this, x0 + 290, yAcao, 'Cancelar', () => {
       this.selecionado = null;
       this.redesenhar();
     }, { largura: 140, altura: 34, tamanho: '13px', cor: 0x3a2c20, corHover: 0x4a3828, corTexto: PERGAMINHO });
-    this.camada.add(btnCancelar.caixa);
+    this.camada.add(btnCancelar.container);
 
     if (item) {
       const btnApagar = botao(this, x0 + 450, yAcao, 'Apagar', () => this.confirmarApagar(aba, item), {
@@ -851,7 +851,7 @@ export class AdminScene extends Phaser.Scene {
         corHover: 0x9a3a33,
         corTexto: '#ffe6e0',
       });
-      this.camada.add(btnApagar.caixa);
+      this.camada.add(btnApagar.container);
     }
   }
 
@@ -1049,7 +1049,7 @@ export class AdminScene extends Phaser.Scene {
         corHover: ativo ? 0x4a3828 : 0xa8e0a8,
         corTexto: ativo ? PERGAMINHO : '#14100c',
       });
-      this.camada.add(btn.caixa);
+      this.camada.add(btn.container);
 
       y += alturaLinha + 4;
     }
@@ -1136,7 +1136,7 @@ export class AdminScene extends Phaser.Scene {
         corHover: ehAdm ? 0x4a3828 : 0xe6c47c,
         corTexto: ehAdm ? PERGAMINHO : '#14100c',
       });
-      this.camada.add(btn.caixa);
+      this.camada.add(btn.container);
 
       y += 50;
     }

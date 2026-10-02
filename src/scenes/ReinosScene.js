@@ -70,7 +70,7 @@ export class ReinosScene extends Phaser.Scene {
     this.criarDetalhe(x0 + 28 + listaLargura + 30, y0 + 92, w - listaLargura - 90, h - 180);
 
     this.add.existing(
-      botao(this, width / 2, y0 + h - 30, 'Fechar [R / ESC]', () => this.fechar(), { largura: 200 }).caixa,
+      botao(this, width / 2, y0 + h - 30, 'Fechar [R / ESC]', () => this.fechar(), { largura: 200 }).container,
     );
 
     this.input.keyboard.on('keydown-R', () => this.fechar());
