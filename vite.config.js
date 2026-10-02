@@ -5,6 +5,11 @@ import { defineConfig } from 'vite';
 export default defineConfig({
   base: '/jogo_imperiall_2026/',
 
+  define: {
+    // Build timestamp para forçar novo hash a cada build
+    __BUILD_TIMESTAMP__: JSON.stringify(new Date().toISOString()),
+  },
+
   build: {
     outDir: 'dist',
     sourcemap: false,
