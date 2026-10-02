@@ -24,6 +24,7 @@ Arcano** para que os amigos atravessem e visitem.
 - [Conformidade legal](#conformidade-legal)
 - [Testes](#testes)
 - [Deploy](#deploy)
+- [Arquitetura de Servidores](#arquitetura-de-servidores)
 - [Armadilhas conhecidas do Phaser](#armadilhas-conhecidas-do-phaser)
 - [Decisões de projeto](#decisões-de-projeto)
 
@@ -412,6 +413,28 @@ porque voltam.
 
 10. **Injetar eventos de teclado num `<input>` do DOM** sem
     `ev.stopPropagation()` faz "i" abrir a Mochila enquanto se digita.
+
+---
+
+## Arquitetura de Servidores
+
+Documento completo em [`ARQUITETURA_SERVIDORES.md`](ARQUITETURA_SERVIDORES.md).
+
+**Resumo**: O jogo usa **Firebase (Auth + Firestore + Storage)** como backend
+principal. Para funcionalidades que exigem autoridade de servidor (matchmaking
+de portais, auto-combate, anti-cheat, guildas, chat), adicionamos um **Game
+Server leve (Node.js + Colyseus + Redis)** que roda em VPS próprio.
+
+| Responsabilidade | Onde roda |
+|---|---|
+| Auth, perfil, progresso, itens, base, portais, catálogo | **Firestore** |
+| Upload de imagem | **Firebase Storage** |
+| Matchmaking de portais, auto-combate, anti-cheat, guildas | **Game Server (Node.js + Colyseus)** |
+
+O Game Server roda em VPS próprio (Docker + Redis), custa ~$50–100/mês,
+escala linear. Documento completo com implementação, protocolos, anti-cheat,
+auto-combate, guildas, multi-tenancy (escolas/empresas/cidades) e roadmap
+em `ARQUITETURA_SERVIDORES.md`.
 
 ---
 

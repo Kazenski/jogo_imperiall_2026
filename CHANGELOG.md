@@ -74,30 +74,121 @@ Digitar na busca da wiki nao derruba mais o campo no meio da palavra.
 
 ---
 
-### Recap das novidades anteriores (caso tenha perdido)
+## Atualização — Lobby de heróis, editor de pixels, itens perecíveis
 
-- **Wiki do Imperio (H)**: 9 secoes, busca cruzada, "Ao extrair:" mostra o que
-  o bloco vira.
-- **Criacao de personagem**: nome, 4 racas, vocacao, preview de stats.
-- **Talentos refeitos**: ramos coloridos, ficha ao clicar, pre-requisitos de
-  atributo, duplo-clique para liberar, respec gratis.
-- **Fabricacao**: layout 2 colunas, abas com quebra de linha, insumos faltando
-  em destaque.
-- **Admin (F2)**: 9 abas, formularios 2 colunas, upload imagem com preview,
-  avisos de dependencia ao apagar, abas Portais e Jogadores.
-- **Termos/LGPD**: 12+6 secoes, versao no documento, botao "Apagar meu
-  progresso" no Personagem (V).
-- **Racas**: 4 opcoes (Humano, Anao, Elfo, Orc) — **sem bonus de atributo**,
-  identidade pura.
+*Outubro de 2026*
+
+Esta atualização traz o **Salão dos Heróis** (lobby), um **editor de pixel art**
+no painel admin e melhorias em como os itens se organizam na mochila.
+
+### Chegou: Salão dos Heróis — até 10 personagens
+
+Agora você entra no jogo e cai num **lobby** antes de ir pro mundo. Lá você vê
+todos os seus heróis (até **10** por conta) com retrato, nível, raça e vocação.
+
+- **ENTRAR** — vai direto pro mundo com esse herói.
+- **EDITAR** — muda nome, raça, vocação (enquanto nível ≤ 2).
+- **APAGAR** — apaga o herói para sempre (com confirmação).
+- **+ NOVO HERÓI** — cria outro (enquanto tiver vaga, máx. 10).
+
+O lobby tem **background animado** (parallax, neblina, runas flutuantes) e um
+painel lateral com as **novidades recentes** (changelog resumido). Se você só
+tem um personagem, o lobby abre rapidinho; se não tem nenhum, vai direto pra
+criação.
+
+### Chegou: Editor de Pixel Art no painel admin (F2)
+
+Agora o admin pode **desenhar as imagens dos itens/blocos/monstros direto no
+painel**, sem precisar subir arquivo externo.
+
+- Canvas 32×32 (ou 16×16 / 64×64) com **zoom 1× a 16×** (roda do mouse).
+- **Paleta de 16 cores** + color picker customizado.
+- Ferramentas com atalho:
+  - `B` — **Pincel** (desenha pixel a pixel)
+  - `G` — **Balde** (preenche área contígua — flood fill)
+  - `E` — **Borracha** (apaga para transparente)
+  - `Alt+clique` — **Conta-gotas** (copia cor do pixel)
+  - `Ctrl+L` — **Limpar tudo**
+- **Preview 1:1** em tempo real ao lado do editor.
+- **Fundo transparente** opcional (checkbox).
+- Exporta **PNG base64** → sobe pro Firebase Storage / cola URL.
+- Funciona **offline** (preview via data URL antes do upload).
+
+### Melhorou: itens empilham até 1.000 + alimentos perecíveis
+
+- Pilha padrão subiu para **1.000** (era 999).
+- **Alimentos perecíveis** (admin cadastra `perecivel: true` +
+  `tempoEstragarSegundos`): ao pegar/fabricar, o jogo carimba `dataValidade`.
+  Pilhas com validade **diferente não se unem** — sua maçã fresca não vira
+  mingau misturado com a de ontem.
+- Itens com upgrade continuam não empilhando (cada um tem seu histórico).
+
+### Melhorou: botão "Agrupar" na Mochila (I)
+
+Na mochila, novo botão **Agrupar** junta pilhas do mesmo item até o limite
+(1.000). Perecíveis só agrupam se a validade for **exatamente igual**.
+
+### Melhorou: pontos de atributo extras (além dos de nível)
+
+Agora existem **pontos extras** (missões, conquistas, itens, admin) além dos
+nativos que você ganha por nível.
+- No Personagem (V) aparece: `livres | nativos: X + extras: Y`.
+- Botões `+` para **FIS / MEN / SOC** — gasta os extras primeiro, depois os
+  nativos.
+- Admin pode conceder pontos extras via painel.
+
+### Melhorou: Admin (F2) — digitar não trava, busca ao vivo, editor de pixels
+
+- **Foco que sobrevive**: filtrar a lista, trocar de aba, redesenhar — o cursor
+  **continua no campo** onde você estava digitando.
+- **Busca ao vivo**: digita 2 letras e a lista já filtra (160ms debounce).
+- **Upload de imagem com preview instantâneo**: vê na hora, sobe pro Storage
+  (redimensiona 256px client-side). Funciona offline (data URL).
+- **Novo campo "Pixel Art"**: desenha a imagem do item/bloco/monstro direto no
+  admin (ver acima).
+
+### Correção: Admin — inputs no lugar certo, imagem com preview
+
+- Inputs DOM agora usam coordenadas **absolutas** do container Phaser — ficam
+  exatamente onde devem, com `zIndex` alto.
+- Campo de imagem mostra **preview instantâneo** (FileReader) antes do upload.
+
+### Correção: busca da Wiki (H) mantém foco
+
+Digitar na busca da wiki não derruba mais o campo no meio da palavra.
+
+### Correção: scroll dos Termos + "Ao aceitar..." com margem
+
+- Roda do mouse **rola** o texto (geometria mask + wheel listener).
+- Texto "Ao aceitar..." subiu — não cola mais na borda amarela.
 
 ---
 
-## Ainda em construcao
+### Recap das novidades anteriores
 
-- Combate automatico e missoes
-- Teste ponta-a-ponta do admin
-- Revisao visual: Reinos, Portais, Personagem
+- **Você nasce onde parou** — posição salva a cada 10s e no shutdown.
+- **Mapa 60×44** — 6× maior, mais biomas, bases maiores.
+- **Portal posicionável (Shift+P)** — 4 posições, efeitos visuais (aro rúnico,
+  particulas, runas, placa).
+- **Itens até 1.000 + perecíveis** — pilha 1k, validade carimbada, não mistura.
+- **Botão "Agrupar" na Mochila** — junta pilhas compatíveis.
+- **Pontos de atributo extras** — missões/conquistas dão pontos além do nível.
+- **Admin (F2)**: foco persistente, busca ao vivo, upload com preview, editor
+  de pixel art.
+- **Wiki (H)**: busca ao vivo com foco preservado.
+- **Termos**: scroll funciona, texto com margem.
+- **Lobby**: até 10 heróis, background animado, changelog lateral.
+
+---
+
+## Ainda em construção
+
+- Combate automático e missões
+- Teste ponta-a-ponta do admin (upload real, abas Portais/Jogadores)
+- Revisão visual: Reinos, Portais, Personagem
 - Textos legais finais (precisam de advogado)
+- Guildas / servidores dedicados (para escolas/empresas/cidades)
+- Anti-cheat para auto-farm futuro
 
 ---
 

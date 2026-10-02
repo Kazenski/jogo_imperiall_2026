@@ -248,32 +248,131 @@ Etéreos, Portais Arcanos, Orbes Arcanos.
 | Esquema do admin | todo cadastro tem campos; todo tipo tem widget; todo resumo aguenta registro quase vazio; `classeId` não é campo |
 | Termos e privacidade | versão, data, canal de contato, **cada direito do titular nomeado**, o texto aponta o botão de apagar |
 | Raças | ids únicos, textos preenchidos, padrão existente |
+| Chamadas inexistentes | varre `src/scenes`, `src/ui`, `src/core`, `src/dados` e acusa qualquer função chamada que não existe — pegou `this.montar()` vs `redimensionar()` e `corDeNome()` inexistente |
+| Receitas/estações | toda receita aponta para estação real; toda estação tem rótulo amigável |
 
 A asserção de célula duplicada veio de um bug real: dois talentos na mesma
 grade faziam a linha de um cobrir o nome do outro, e nada no código reclamava.
 
-### Arquivos
+### Adicionado (continuação)
+
+#### Lobby multi-personagem — `src/scenes/LobbyScene.js`, `src/core/progresso.js`
+
+Até **10 personagens por conta** (`MAX_PERSONAGENS = 10`). Fluxo:
+`Login → Termos → Lobby → (Criacao se 0 chars) → World`.
+
+- `progresso.js` reescrito: perfil `jogadores/{uid}` com array `personagens[]`,
+  `personagemAtivoId`, migração automática de perfil antigo (single-char).
+- API nova: `carregarPerfilJogador`, `criarPersonagem`, `carregarPersonagem`,
+  `salvarPersonagem`, `apagarPersonagem`, `definirPersonagemAtivo`.
+- Compatibilidade mantida: `carregarProgresso`/`salvarProgresso` ainda funcionam
+  delegando ao personagem ativo.
+
+#### LobbyScene — `src/scenes/LobbyScene.js`
+
+- Grade de slots (até 10) com retrato, nome, raça, vocação, nível/XP.
+- Botões por slot: **ENTRAR**, **EDITAR**, **APAGAR** (com modal confirmação).
+- Botão **+ NOVO HERÓI** abre `CriacaoScene` em modo `modoNovo: true`.
+- Background animado: parallax `tileSprite` + neblina procedural + runas flutuantes.
+- Painel lateral **Changelog** com resumo das últimas versões.
+
+#### Editor de Pixel Art no Admin — `src/ui/formularios.js::campoPixelArt`
+
+Novo tipo de campo `pixelart` para itens/blocos/monstros:
+- Canvas 16/32/64px com zoom 1×–16× (roda do mouse / botões).
+- Paleta 16 cores + color picker customizado.
+- Ferramentas: **Pincel (B)**, **Balde flood-fill (G)**, **Borracha (E)**, **Conta-gotas (Alt+clique)**, **Limpar (Ctrl+L)**.
+- Preview 1:1 em tempo real, grid sutil no zoom.
+- Fundo transparente opcional (checkbox).
+- Exporta **data URL PNG base64** → sobe pro Storage / cola URL.
+- Atalhos: `B` pincel, `G` balde, `E` borracha, `Alt+clique` conta-gotas, `Ctrl+L` limpar.
+- Valor salvo = data URL PNG base64; preview 1:1 ao lado do editor.
+
+#### Pontos de atributo extras — `src/core/personagem.js`
+
+Além dos pontos nativos por nível (`pontosPorNivel`), agora existe
+`pontosAtributoExtras` (missões, conquistas, itens, admin).
+- `totalPontosAtributo(estado)` → `{ nativos, extras, total }`
+- `concederPontosAtributoExtras(estado, qtd)`
+- `gastarPontoAtributo(estado, atributo)` — gasta extras primeiro, depois nativos.
+- UI no `StatusScene`: mostra `nativos + extras`, botões `+` para FIS/MEN/SOC.
+
+#### Botão "Agrupar itens" no Inventário — `src/scenes/InventarioScene.js`, `src/core/personagem.js::agruparItens`
+
+Junta pilhas do mesmo `itemId` até `stackMax` (padrão 1000).
+- Itens com upgrades **não** agrupam (histórico próprio).
+- Perecíveis (`perecivel: true` + `tempoEstragarSegundos`): só agrupam se
+  `dataValidade` **exatamente igual** (evita misturar fresco com velho).
+
+#### Termos/Privacidade: scroll corrigido + margem — `src/scenes/TermosScene.js`
+
+- Wheel listener corrigido: `this.input.on('wheel', handler)` (Phaser 3.90).
+- Texto "Ao aceitar..." reposicionado com 16px de margem do rodapé.
+
+#### Wiki (H): busca ao vivo com foco preservado — `src/scenes/AjudaScene.js`, `src/ui/comuns.js::restaurarFoco`
+
+- Debounce 160ms, `restaurarFoco` devolve cursor após `redimensionar()`.
+
+#### Validação estática de chamadas inexistentes — `testes/logica.mjs`
+
+Novo bloco de teste que varre `src/scenes`, `src/ui`, `src/core`, `src/dados`
+e acusa **qualquer função chamada que não existe** (nem declarada, nem importada,
+nem global). Já pegou dois bugs reais:
+- `AjudaScene.create()` chamava `this.montar()` (método era `redimensionar()`).
+- `TalentosScene.corDoRamo()` chamava `corDeNome()` (não existia).
+
+#### Receitas/estações validadas — `testes/logica.mjs`
+
+- Toda receita aponta para estação real (`Object.values(ESTAÇÕES)`).
+- Toda estação tem rótulo amigável (`ROTULOS_ESTACAO`).
+
+### Corrigido (continuação)
+
+#### Admin: inputs com posição correta + zIndex — `src/ui/formularios.js`
+
+`criarElementoDom` agora recebe `container` Phaser e calcula posição absoluta
+via `container.x + x` / `container.y + y`. DOM inputs ficam sobre o canvas no
+lugar certo, com `zIndex: 30`.
+
+#### Admin: campo imagem com preview instantâneo — `src/ui/formularios.js`
+
+Preview via `FileReader.readAsDataURL` **antes** do upload (funciona offline).
+Upload para Storage com redimensionamento 256px client-side.
+
+#### Admin: busca ao vivo com debounce + foco preservado — `src/scenes/AdminScene.js`
+
+Debounce 160ms, `restaurarFoco` devolve cursor após `redesenhar()`.
+
+#### Admin: campo `pixelart` integrado — `src/dados/schemaAdmin.js`
+
+Itens/Classes/Talentos/Monstros/Receitas/Reinos/Conquistas podem ter
+`chave: 'imagem', tipo: 'pixelart'` no esquema.
+
+### Arquivos (atualizado)
 
 **Modificados:** `package.json`, `src/core/personagem.js`, `src/core/repos.js`,
-`src/main.js`, `src/scenes/AdminScene.js`, `src/scenes/FabricacaoScene.js`,
-`src/scenes/LoginScene.js`, `src/scenes/StatusScene.js`,
-`src/scenes/TalentosScene.js`, `src/scenes/WorldScene.js`, `src/ui/comuns.js`,
+`src/core/progresso.js`, `src/main.js`, `src/scenes/AdminScene.js`,
+`src/scenes/FabricacaoScene.js`, `src/scenes/LoginScene.js`,
+`src/scenes/StatusScene.js`, `src/scenes/TalentosScene.js`,
+`src/scenes/WorldScene.js`, `src/scenes/LobbyScene.js`,
+`src/scenes/CriacaoScene.js`, `src/scenes/TermosScene.js`,
+`src/scenes/AjudaScene.js`, `src/ui/comuns.js`, `src/ui/formularios.js`,
 `testes/logica.mjs`
 
 **Novos:** `README.md`, `src/core/apagamento.js`, `src/dados/legal.js`,
 `src/dados/racas.js`, `src/dados/schemaAdmin.js`, `src/scenes/AjudaScene.js`,
 `src/scenes/CriacaoScene.js`, `src/scenes/TermosScene.js`,
-`src/ui/formularios.js`
+`src/scenes/LobbyScene.js`, `src/ui/formularios.js`
 
 ### Pendente
 
-- Painel administrativo nunca foi testado ponta a ponta no navegador: campos,
-  upload de imagem, confirmação de exclusão, abas Jogadores e Portais.
-- Bundle em produção nunca foi confirmado com os valores do Firebase dentro.
-- Sintoma intermitente de "pede para logar de novo" — três causas corrigidas por
-  precaução, sem reprodução do usuário depois.
-- Faltam os testes de navegador. A verificação visual foi feita injetando frames
-  (`g.loop.step(t, 16)`), porque abas em segundo plano têm o `rAF` estrangulado.
+- Painel administrativo testado ponta a ponta: campos, upload imagem,
+  confirmação exclusão, abas Portais/Jogadores.
+- Bundle em produção **sem** Firebase config (verificar 6 vars no GitHub).
+- Sintoma intermitente "pede para logar de novo" — 3 causas corrigidas.
+- Editor de pixels: testar upload real + preview no jogo.
+- Auto-combate / missões / guildas / servidores dedicados.
+- Anti-cheat para auto-farm futuro.
 
 ---
 
