@@ -71,7 +71,7 @@ export function texturaDeUrl(scene, url, chave) {
  * pixel CSS. Ainda assim medimos o `getBoundingClientRect` do canvas, porque ele
  * pode estar deslocado dentro do elemento pai.
  */
-function criarElementoDom(scene, { x, y, largura, altura, valor, placeholder, multilinha }) {
+function criarElementoDom(scene, { x, y, largura, altura, valor, placeholder, multilinha, container }) {
   const canvas = scene.game.canvas;
   const pai = canvas.parentElement;
   if (!pai) return null;
@@ -84,10 +84,15 @@ function criarElementoDom(scene, { x, y, largura, altura, valor, placeholder, mu
   el.spellcheck = false;
 
   const posicionar = () => {
+    if (!container || !container.scene) return;
+    // Coordenadas absolutas do container na cena -> pixels CSS no canvas
+    const absX = container.x;
+    const absY = container.y;
     const c = canvas.getBoundingClientRect();
     const p = pai.getBoundingClientRect();
-    el.style.left = `${c.left - p.left + x + 9}px`;
-    el.style.top = `${c.top - p.top + y + 5}px`;
+    // Uma unidade de cena = 1 pixel CSS (ScaleManager RESIZE com 100%)
+    el.style.left = `${c.left - p.left + absX + 9}px`;
+    el.style.top = `${c.top - p.top + absY + 5}px`;
     el.style.width = `${Math.max(0, largura - 18)}px`;
     el.style.height = `${Math.max(10, altura - 10)}px`;
   };
@@ -110,6 +115,10 @@ function criarElementoDom(scene, { x, y, largura, altura, valor, placeholder, mu
   pai.appendChild(el);
 
   scene.scale.on(Phaser.Scale.RESIZE, posicionar);
+  container.once('destroy', () => {
+    scene.scale.off(Phaser.Scale.RESIZE, posicionar);
+    el.remove();
+  });
   return { el, posicionar };
 }
 
@@ -246,6 +255,7 @@ function campoDigitacao(scene, container, cfg) {
     valor: valor ?? '',
     placeholder,
     multilinha: multilinha || tipo === 'area',
+    container,
   });
 
   const zone = scene.add
@@ -665,6 +675,7 @@ function campoImagem(scene, container, cfg) {
     altura: ALTURA_ENTRADA,
     valor: atual,
     placeholder: 'ou cole a URL da imagem',
+    container,
   });
 
   const aplicarUrl = (url) => {
