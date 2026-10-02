@@ -8,6 +8,117 @@ caminho mais rápido é relatar com o que você estava fazendo na tela.
 
 ---
 
+## Chunks — o mundo passa a ser desenhado, não sorteado
+
+*v0.1.3 · Outubro de 2026*
+
+### A ideia
+
+Até agora o mundo era um sorteio uniforme. Cada reino jogava a mesma
+densidade de minério, de árvore e de monstro em **toda** a sua área — não
+existia como ter uma clareira, um pântano e uma mina de ferro no mesmo reino. Ou
+o reino inteiro era rico, ou era pobre.
+
+Agora o mundo é um **tabuleiro de chunks**. Cada chunk é um pedaço do mapa com
+regras próprias: o que há na superfície, o que há no subsolo, que monstros
+nascem, quais NPCs aparecem, e que altura o terreno tem. Você desenha o reino
+numa grade, bloco por bloco, e o computador preenche o resto.
+
+### Como funciona no painel
+
+A aba nova é **🧩 Chunks**. O mapa é o mesmo do NPC — um clique posiciona — mas
+com uma diferença que importa: **a célula é um chunk, não um bloco**. Um mundo
+de 128 blocos com chunks de 32 vira uma grade 4×4; com chunks de 8, vira 16×16.
+Mudar o tamanho do chunk redesenha o mapa na hora, porque muda a unidade da
+grade.
+
+Cada chunk guarda:
+
+- **Terreno**: bloco de superfície, bloco de subsolo, profundidade mínima e
+  máxima (é isto que o jogador cava)
+- **Altura**: altura base, variação e suavização — o terreno com relevo
+- **O que aparece**: nós de recurso, mobs nativas, NPCs e estações, com a
+  densidade de cada um
+- **Para o jogador**: pode construir base, pode escavar, tem abrigo, e o nível
+  de perigo
+- **Semente**: a mesma semente gera sempre o mesmo chunk, para o mundo ser
+  reproduzível entre jogadores
+
+### Peso e desenho
+
+Duas coisas que se combinam:
+
+- **Posicionado** — o que você coloca na grade manda. O preenchimento
+  automático não mexe ali.
+- **Peso** — decide a frequência do chunk no preenchimento das células vazias.
+  Peso 0 significa "só existe onde eu coloquei".
+
+Assim dá para desenhar um caminho seguro cortando um reino perigoso, sem o
+sorteio desfazer o desenho.
+
+### O que ainda NÃO mudou no jogo
+
+Isto é importante, para ninguém ficar esperando algo que não chegou: os chunks
+**não entram no jogo ainda**. O que existe agora é o cadastro e a geração — o
+terreno com altura e os chunks na Exploração vêm na próxima etapa. A aba serve
+para você já escrever o mundo enquanto a parte visual é construída.
+
+---
+
+## Correção — seus personagens não somem mais
+
+*v0.1.3 · Outubro de 2026*
+
+### O que estava acontecendo
+
+O Salão dos Heróis mostrava "0/10 heróis" mesmo com a conta cheia de heróis. E
+o pior: em certaslentidão na internet, os personagens eram **apagados de
+verdade**.
+
+### Por quê
+
+São dois defeitos da mesma família. O jogo guarda duas coisas em duas coleções
+diferentes:
+
+- `users` — quem você é (nome, email)
+- `jogadores` — o que você tem (a lista de heróis)
+
+O Salão recebia o documento errado e lia a lista de heróis de um documento que
+não tem lista de heróis. Por isso o nome aparecia certo e a lista não.
+
+O segundo é mais sério. Quando a leitura do servidor demorava ou era negada, o
+jogo inventava um perfil **vazio** em vez de dizer "não consegui ler" — e como
+o salvamento grava o documento inteiro, um perfil vazio significava
+`personagens: []`. Ou seja: uma internet lenta podia **apagar seus heróis**.
+Foi exatamente isso que aconteceu com você, várias vezes.
+
+### O que mudou
+
+- O Salão lê o documento certo.
+- Se a leitura falhar, o jogo **avisa** em vez de fingir que sua conta está
+  vazia. Você vê "não foi possível carregar seus heróis" e um botão de
+  recarregar — nunca um "crie o seu primeiro herói" que faria você criar um
+  duplicado.
+- O salvamento não esconde mais falha: se não gravou, o jogo diz.
+- Nada é gravado por cima de um perfil que não foi lido.
+
+### E o upload de imagem no painel
+
+O erro **403 (Forbidden)** ao enviar a imagem de uma classe tinha uma causa
+específica: as regras do Storage tinham a leitura pública e a escrita de upload
+em blocos separados, e o de dentro apagava a de fora. Isso fazia **nenhuma
+imagem do jogo carregar**. Corrigido, e agora há um teste que roda com as regras
+reais.
+
+### E o painel administrativo
+
+A aba inteira do painel abriu sem nenhum campo em uma versão anterior, por causa
+de um erro numa única parte do formulário — que todas as abas usavam. Corrigido,
+e agora há teste para essa classe de erro: um campo usado no formulário sem ser
+declarado quebra a suíte.
+
+---
+
 ## Correção — os botões voltaram a funcionar
 
 *v0.1.1 · Outubro de 2026*

@@ -12,6 +12,7 @@ import {
   repoEstacoes,
   repoBiomas,
   repoNPCs,
+  repoChunks,
   repoServidores,
   repoBackups,
   listarAdmins,
@@ -29,6 +30,13 @@ import { ehAdmin } from '../core/usuarios.js';
 import { enviarImagem, pareceUrlDeImagem } from '../core/armazenamento.js';
 import { abrirModal } from '../ui/modal.js';
 import { criarEditorPixelArt, TAMANHO_PIXEL_ART } from '../ui/pixelart.js';
+// O tamanho do chunk define a UNIDADE da grade do mapa (célula = chunk, não
+// bloco), então o painel precisa da mesma lista de opções do schema. Se os dois
+// divergirem, o admin marca "16" num campo e posiciona numa grade de 32.
+import { TAMANHO_CHUNK_PADRAO } from '../core/mundo.js';
+
+/** Os tamanhos de chunk aceitos. Espelha `CAMPOS_CHUNK.tamanhoBlocos`. */
+const TAMANHO_CHUNK_OPCOES = [8, 16, 32, 64];
 import {
   CAMPOS_ITEM,
   CAMPOS_CLASSE,
@@ -40,6 +48,7 @@ import {
   CAMPOS_ESTACAO,
   CAMPOS_BIOMA,
   CAMPOS_NPC,
+  CAMPOS_CHUNK,
   CAMPOS_SERVIDOR,
   RESUMO,
   serializadores,
@@ -73,6 +82,7 @@ const ABAS = [
   { id: 'estacoes', label: 'Estações', icone: '🏭', repo: repoEstacoes, cache: 'estacoes', campos: CAMPOS_ESTACAO, resumo: RESUMO.estacoes, pastaUpload: 'estacoes' },
   { id: 'biomas', label: 'Biomas', icone: '🌿', repo: repoBiomas, cache: 'biomas', campos: CAMPOS_BIOMA, resumo: RESUMO.biomas, pastaUpload: 'biomas' },
   { id: 'npcs', label: 'NPCs do Mundo', icone: '👤', repo: repoNPCs, cache: 'npcs', campos: CAMPOS_NPC, resumo: RESUMO.npcs, pastaUpload: 'npcs' },
+  { id: 'chunks', label: 'Chunks', icone: '🧩', repo: repoChunks, cache: 'chunks', campos: CAMPOS_CHUNK, resumo: RESUMO.chunks },
   { id: 'servidores', label: 'Servidores', icone: '🖥️', repo: repoServidores, cache: 'servidores', campos: CAMPOS_SERVIDOR, resumo: RESUMO.servidores },
   { id: 'backup', label: 'Backup', icone: '💾', especial: 'backup' },
   { id: 'balanceamento', label: 'Bal. Tabela', icone: '⚖️', especial: 'balanceamento' },
@@ -424,13 +434,14 @@ export class AdminScene extends Phaser.Scene {
    */
   async carregarContexto() {
     if (this._contexto) return this._contexto;
-    const [classes, itens, monstros, reinos, biomas, npcs, estacoes] = await Promise.all([
+    const [classes, itens, monstros, reinos, biomas, npcs, chunks, estacoes] = await Promise.all([
       this.carregar('classes', () => repoClasses.listar()),
       this.carregar('itens', () => repoItens.listar()),
       this.carregar('monstros', () => repoMonstros.listar()),
       this.carregar('reinos', () => repoWorldTemplates.listar()),
       this.carregar('biomas', () => repoBiomas.listar()),
       this.carregar('npcs', () => repoNPCs.listar()),
+      this.carregar('chunks', () => repoChunks.listar()),
       this.carregar('estacoes', () => repoEstacoes.listar()),
     ]);
 
@@ -445,7 +456,7 @@ export class AdminScene extends Phaser.Scene {
     };
 
     this._contexto = {
-      classes, itens, monstros, reinos, biomas, npcs, estacoes,
+      classes, itens, monstros, reinos, biomas, npcs, chunks, estacoes,
       classesOpcoes: opcoesDe(classes),
       itensOpcoes: opcoesDe(itens),
       blocosOpcoes: itens.map(blocoDe).filter(Boolean),
@@ -553,7 +564,9 @@ export class AdminScene extends Phaser.Scene {
     const previewEl = conteudo.querySelector('#adminPreview');
     if (this.selecionado?.aba?.id === aba.id) {
       // A aba de NPC recebe o mapa quadriculado para posicionar o personagem.
-      const comMapa = aba.id === 'npcs';
+      // A de chunks recebe o mesmo mapa, mas a célula é um CHUNK e não um
+      // bloco — ver `montarGradeChunk`.
+      const comMapa = aba.id === 'npcs' || aba.id === 'chunks';
       if (comMapa) {
         conteudo.querySelector('.grid-catalogo').style.gridTemplateColumns = '260px minmax(0,1fr) 300px';
         // A grade lateral é um resumo: ela cabe em 220px de largura mas corta
@@ -563,7 +576,11 @@ export class AdminScene extends Phaser.Scene {
         btnAbrir.className = 'btn-primario';
         btnAbrir.style.cssText = 'width:100%;margin-top:10px;padding:9px';
         btnAbrir.textContent = '🗺 Abrir mapa inteiro';
-        btnAbrir.addEventListener('click', () => this.abrirMapaNpcEmModal(aba, this.selecionado.item, ctx));
+        btnAbrir.addEventListener('click', () =>
+          aba.id === 'chunks'
+            ? this.abrirMapaChunkEmModal(aba, this.selecionado.item, ctx)
+            : this.abrirMapaNpcEmModal(aba, this.selecionado.item, ctx),
+        );
         this._botaoAbrirMapa = btnAbrir;
       }
       this.desenharFormularioDom(formEl, aba, this.selecionado.item, classesOpcoes, ctx);
@@ -571,9 +588,13 @@ export class AdminScene extends Phaser.Scene {
       if (comMapa) {
         const painelMapa = document.createElement('div');
         painelMapa.className = 'painel';
-        painelMapa.id = 'adminMapaNpc';
+        painelMapa.id = aba.id === 'chunks' ? 'adminMapaChunk' : 'adminMapaNpc';
         conteudo.querySelector('.grid-catalogo').insertBefore(painelMapa, previewEl);
-        this.desenharMapaMapaComBotao(painelMapa, aba, this.selecionado.item, ctx);
+        if (aba.id === 'chunks') {
+          this.desenharMapaChunkComBotao(painelMapa, aba, this.selecionado.item, ctx);
+        } else {
+          this.desenharMapaMapaComBotao(painelMapa, aba, this.selecionado.item, ctx);
+        }
       }
 
     } else {
@@ -744,6 +765,219 @@ export class AdminScene extends Phaser.Scene {
           },
         },
       ],
+    });
+  }
+
+  /**
+   * Mapa quadriculado dos CHUNKS.
+   *
+   * A diferença com o mapa de NPC, que dá o nome de "mesma coisa": lá a célula
+   * é um BLOCO do mundo. Aqui a célula é um CHUNK — um retângulo de
+   * `tamanhoBlocos × tamanhoBlocos` blocos. Então o lado da grade não é o
+   * tamanho do mundo, é o tamanho do mundo DIVIDIDO pelo chunk:
+   *
+   *     mundo de 128 blocos, chunk de 32  ->  grade 4 × 4
+   *     mundo de 128 blocos, chunk de 8   ->  grade 16 × 16
+   *
+   * Por isso o `tamanhoBlocos` redesenha o mapa: mudar de 32 para 8 não é
+   * ajuste de zoom, é trocar a unidade da grade, e um mapa que não
+   * redesenhasse deixaria o admin posicionar numa célula que não existe.
+   *
+   * Cada célula mostra a cor do chunk, e o nome abre no tooltip. Usar cor e
+   * não texto é o que permite o mapa de 96×96 continuar legível.
+   */
+  montarGradeChunk(el, item, ctx, aoEscolher, tamanhoCelula = 22, compacto = false) {
+    const mundo = ctx.reinos.find((r) => r.id === item?.mundoId);
+    const tamanhoBlocos = TAMANHO_CHUNK_OPCOES.includes(Number(item?.tamanhoBlocos))
+      ? Number(item.tamanhoBlocos)
+      : TAMANHO_CHUNK_PADRAO;
+    const { lado, blocosDoMundo } = this.ladoDaGradeChunk(mundo, tamanhoBlocos);
+
+    el.innerHTML = `
+      <h3>Posição no mapa</h3>
+      <p style="font-size:11px;color:#7b8794;margin-bottom:8px">
+        ${
+          mundo
+            ? `Mundo: <b>${escaparHtml(mundo.nome)}</b> · ${blocosDoMundo}×${blocosDoMundo} blocos ·
+               chunk de ${tamanhoBlocos} · grade ${lado}×${lado}`
+            : 'Selecione um mundo no formulário para ver a grade dele'
+        }
+      </p>
+      <div class="mapa-npc"></div>
+      <div class="legenda-mapa">
+        <span>🟨 quadrado colorido = chunk posicionado</span>
+        <span>🟥 ponto selecionado</span>
+        <span>clique para posicionar</span>
+      </div>`;
+
+    const grade = el.querySelector('.mapa-npc');
+    grade.style.gridTemplateColumns = `repeat(${lado}, ${tamanhoCelula}px)`;
+
+    const outros = (ctx.chunks ?? []).filter((c) => c.id !== item?.id);
+    const porCelula = new Map();
+    for (const c of outros) {
+      const x = Number(c.posX);
+      const y = Number(c.posY);
+      if (!Number.isFinite(x) || !Number.isFinite(y)) continue;
+      porCelula.set(`${x},${y}`, (porCelula.get(`${x},${y}`) ?? 0) + 1);
+    }
+    const cores = new Map();
+    for (const c of outros) {
+      if (c.cor) cores.set(c.id, c.cor);
+    }
+
+    const alvo = { x: Number(item?.posX) || 0, y: Number(item?.posY) || 0 };
+
+    for (let y = 0; y < lado; y += 1) {
+      for (let x = 0; x < lado; x += 1) {
+        const celula = document.createElement('div');
+        celula.className = 'celula';
+        celula.style.width = `${tamanhoCelula}px`;
+        celula.style.height = `${tamanhoCelula}px`;
+        celula.style.fontSize = `${Math.max(9, tamanhoCelula - 12)}px`;
+
+        const qtd = porCelula.get(`${x},${y}`) ?? 0;
+        if (qtd) {
+          celula.classList.add('com-npc');
+          celula.textContent = qtd > 1 ? String(qtd) : '•';
+          celula.title = `${qtd} chunk(s) aqui`;
+        }
+        if (item?.cor) celula.style.background = `${item.cor}22`;
+
+        if (x === alvo.x && y === alvo.y) celula.classList.add('alvo');
+
+        celula.addEventListener('click', () => {
+          alvo.x = x;
+          alvo.y = y;
+          grade.querySelectorAll('.celula.alvo').forEach((c) => c.classList.remove('alvo'));
+          celula.classList.add('alvo');
+          if (!compacto) {
+            this.status(
+              `Chunk em ${x},${y} — blocos ${x * tamanhoBlocos},${y * tamanhoBlocos} a ` +
+                `${(x + 1) * tamanhoBlocos - 1},${(y + 1) * tamanhoBlocos - 1}`,
+            );
+          }
+          aoEscolher(x, y);
+        });
+        grade.appendChild(celula);
+      }
+    }
+
+    return { lado, alvo, tamanhoBlocos };
+  }
+
+  /**
+   * Lado da grade de chunks, em CÉLULAS (não em blocos).
+   *
+   * O teto de 96 é o mesmo do mapa de NPC, e pelo mesmo motivo: 256 células
+   * dariam 65.536 divs e travariam o navegador. Mundo grande com chunk pequeno
+   * estoura o limite — e aí o admin posiciona por coordenada, que é o que os
+   * campos `posX`/`posY` existem para.
+   */
+  ladoDaGradeChunk(mundo, tamanhoBlocos = TAMANHO_CHUNK_PADRAO) {
+    const PADRAO = 32;
+    let blocosDoMundo = PADRAO;
+    if (mundo?.largura) blocosDoMundo = Number(mundo.largura) || PADRAO;
+    else if (mundo?.tamanho) {
+      blocosDoMundo = { pequeno: 32, medio: 64, grande: 128, enorme: 256 }[mundo.tamanho] ?? PADRAO;
+    }
+    const lado = Math.ceil(blocosDoMundo / Math.max(1, tamanhoBlocos));
+    return { lado: Math.max(2, Math.min(96, Math.round(lado))), blocosDoMundo };
+  }
+
+  /**
+   * Painel lateral do mapa de chunks: a grade resumida mais o botão de abrir.
+   */
+  desenharMapaChunkComBotao(el, aba, item, ctx) {
+    const aplicar = (x, y) => {
+      for (const chave of ['posX', 'posY']) {
+        const valor = String(chave === 'posX' ? x : y);
+        const input = this.overlay?.querySelector?.(`input[data-campo="${chave}"]`);
+        if (input) input.value = valor;
+        const ref = this._refsForm?.[chave];
+        if (ref) ref.obter = () => valor;
+      }
+      this.atualizarPreviewDom(aba);
+    };
+
+    this.montarGradeChunk(el, item, ctx, aplicar, 18, true);
+
+    const btn = this._botaoAbrirMapa;
+    if (btn) el.appendChild(btn);
+
+    // Mudar o tamanho do chunk muda a UNIDADE da grade, então o mapa tem de
+    // ser redesenhado — não só o campo. Sem isto o admin mudava 32 -> 8, o
+    // campo mostrava 8, e a grade continuava com células de 32 blocos.
+    const input = this.overlay?.querySelector?.('select[data-campo="tamanhoBlocos"]');
+    if (input) {
+      input.addEventListener('change', () => {
+        if (!this.overlay) return;
+        const alvo = this.overlay.querySelector('#adminMapaChunk');
+        if (!alvo) return;
+
+        // NÃO limpar `_botaoAbrirMapa` aqui. Ele é o mesmo elemento de DOM em
+        // todas as redesenhas, e `appendChild` de um nó já-filho o move — que
+        // é o comportamento desejado. Zerar a referência fazia o redesenho
+        // seguinte não ter botão para anexar, e o "Abrir mapa inteiro"
+        // sumia do painel para sempre depois da primeira mudança de tamanho.
+        this.desenharMapaChunkComBotao(alvo, aba, { ...item, tamanhoBlocos: Number(input.value) }, ctx);
+        this.status(`Grade redesenhada para chunks de ${input.value} blocos`);
+      });
+    }
+  }
+
+  /**
+   * Mapa de chunks em modal, do tamanho que cabe na tela.
+   *
+   * Mesma ideia do mapa de NPC: o painel lateral serve para conferir, o modal
+   * serve para mirar a célula certa. Aqui a diferença é que o quadradinho é
+   * maior (o mapa de chunks costuma ser pequeno — 4×4 a 16×16) e cabe quase
+   * sempre inteiro na janela.
+   */
+  abrirMapaChunkEmModal(aba, item, ctx) {
+    const escuro = this.overlay?.classList.contains('escuro') ?? false;
+
+    abrirModal({
+      titulo: `Mapa de chunks — ${item?.nome ?? 'chunk sem nome'}`,
+      escuro,
+      largura: 'min(94vw, 900px)',
+      desenhar: (corpo) => {
+        corpo.style.cssText = 'display:flex;flex-direction:column;gap:12px';
+
+        const area = document.createElement('div');
+        area.id = 'mapaChunkModal';
+        corpo.appendChild(area);
+
+        const aplicar = (x, y) => {
+          for (const chave of ['posX', 'posY']) {
+            const valor = String(chave === 'posX' ? x : y);
+            const input = this.overlay?.querySelector?.(`input[data-campo="${chave}"]`);
+            if (input) input.value = valor;
+            const ref = this._refsForm?.[chave];
+            if (ref) ref.obter = () => valor;
+          }
+          this.status(`Chunk em ${x},${y}`);
+          this.atualizarPreviewDom(aba);
+        };
+
+        const tamanho = TAMANHO_CHUNK_OPCOES.includes(Number(item?.tamanhoBlocos))
+          ? Number(item.tamanhoBlocos)
+          : TAMANHO_CHUNK_PADRAO;
+        const { lado } = this.ladoDaGradeChunk(
+          ctx.reinos.find((r) => r.id === item?.mundoId),
+          tamanho,
+        );
+        const celula = Math.max(26, Math.min(64, Math.floor(760 / Math.max(1, lado))));
+
+        this.montarGradeChunk(area, item, ctx, aplicar, celula, true);
+
+        const dica = document.createElement('p');
+        dica.style.cssText = 'margin:0;font-size:11px;color:#7b8794';
+        dica.textContent =
+          'O ponto é gravado no formulário ao clicar. Feche o mapa e salve o chunk para gravar no Firestore.';
+        corpo.appendChild(dica);
+      },
+      botoes: [{ texto: 'Fechar', classe: 'primario' }],
     });
   }
 

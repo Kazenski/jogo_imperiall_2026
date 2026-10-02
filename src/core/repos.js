@@ -190,6 +190,22 @@ export const repoNPCs = {
   remover: (id) => removerDoc('npcs', id),
 };
 
+/**
+ * Chunks: a unidade de geração do mundo.
+ *
+ * `listarColecao` ordena por `nome`, não por posição — e a ordem de leitura
+ * NÃO pode depender disso. Dois chunks no mesmo `posX,posY` só podem existir
+ * se um "sobrescrever" o outro, e essa precedência vem do peso, não do
+ * alfabeto. Ver `chunkVigente` em `core/mundo.js`.
+ */
+export const repoChunks = {
+  listar: () => listarColecao('chunks', 'nome'),
+  obter: (id) => obterDoc('chunks', id),
+  criar: (dados) => criarDoc('chunks', dados),
+  salvar: (id, dados, merge) => salvarDoc('chunks', id, dados, merge),
+  remover: (id) => removerDoc('chunks', id),
+};
+
 export const repoServidores = {
   listar: () => listarColecao('servidores', 'nome'),
   obter: (id) => obterDoc('servidores', id),

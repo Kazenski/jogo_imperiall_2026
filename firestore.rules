@@ -109,6 +109,19 @@ service cloud.firestore {
       allow create, update, delete: if isAdmin();
     }
 
+    // Chunks: o mundo é gerado a partir deles, então o JOGO tem que ler.
+    //
+    // Leitura liberada para qualquer conta autenticada (mesma política das
+    // outras coleções de catálogo): se o mundo gerado precisa ser reproduzível
+    // entre jogadores, e cada jogador lê um subconjunto diferente conforme
+    // caminha, então o gate por conta traria uma divergência entre o que eu
+    // vejo e o que o outro vê. O chunk é configuração de mundo, não dado de
+    // jogador.
+    match /chunks/{id} {
+      allow read: if request.auth != null;
+      allow create, update, delete: if isAdmin();
+    }
+
     match /servidores/{id} {
       allow read: if request.auth != null;
       allow create, update, delete: if isAdmin();

@@ -235,7 +235,39 @@ console.log('\n== AdminScene: campo imagem ==');
 }
 
 // ---------------------------------------------------------------------
-// 5. Todo tipo de campo do schema tem um ramo no AdminScene
+// 5. Todo esquema declarado tem um ramo no ABAS do AdminScene
+// ---------------------------------------------------------------------
+//
+// Um esquema que existe no `schemaAdmin.js` mas não foi ligado ao ABAS fica
+// invisível no painel: o cadastro existe, o formulário existe, e o admin não
+// tem por onde chegar nele. É a mesma classe de erro do `fileEl` — a peça está
+// pronta e nada avisa.
+console.log('\n== esquemas ligados ao painel ==');
+{
+  const schema = ler(SCHEMA);
+  const admin = ler(ADMIN);
+
+  const declarados = [...schema.matchAll(/export const (CAMPOS_\w+) = \[/g)].map((m) => m[1]);
+  const ligados = new Set([...admin.matchAll(/CAMPOS_(\w+)/g)].map((m) => `CAMPOS_${m[1]}`));
+
+  const orfaos = declarados.filter((n) => !ligados.has(n));
+  ok(
+    orfaos.length === 0,
+    `todo esquema tem uma aba no painel (órfãos: ${orfaos.join(', ') || 'nenhum'})`,
+  );
+
+  // E o caminho inverso: `ABAS` não pode citar um esquema inexistente, que
+  // seria um `undefined` silencioso em tempo de execução.
+  const citados = [...new Set([...admin.matchAll(/CAMPOS_(\w+)/g)].map((m) => `CAMPOS_${m[1]}`))];
+  const inexistentes = citados.filter((n) => !declarados.includes(n));
+  ok(
+    inexistentes.length === 0,
+    `nenhuma aba cita um esquema inexistente (inexistentes: ${inexistentes.join(', ') || 'nenhum'})`,
+  );
+}
+
+// ---------------------------------------------------------------------
+// 6. Todo tipo de campo do schema tem um ramo no AdminScene
 // ---------------------------------------------------------------------
 console.log('\n== cobertura de tipos de campo ==');
 {

@@ -611,6 +611,138 @@ export const CAMPOS_NPC = [
 ];
 
 // =====================================================================
+// CHUNKS — o pedaço de mundo que o computador preenche sozinho
+// =====================================================================
+//
+// Um chunk é a unidade de geração. O mundo deixa de ser "espalha recurso
+// uniforme em 60×44" e passa a ser "um tabuleiro de chunks, e cada chunk sabe
+// o que tem dentro dele".
+//
+// Por que chunks e não continuar espalhando no mundo inteiro:
+//  - `gerarNosDeRecurso` sorteava densidade IGUAL em toda a área. Não havia
+//    como ter uma clareira, um pântano e uma mina no mesmo reino: ou o reino
+//    inteiro era rico, ou era pobre.
+//  - O chunk dá identidade local sem especial-case no código. "Aqui é caverna"
+//    vira um registro que o admin edita, não um `if` em `mundo.js`.
+//  - É a unidade que o mundo precisa para crescer sem carregar tudo: 60×44
+//    cabia em memória, mas um mundo de exploration contínua não.
+//
+// OS PARÂMETROS DE ALTURA FICAM AQUI DE PROPOSITO, mesmo antes de o terreno
+// ter altura renderizada. Registrar o dado agora significa que a migração
+// depois é só ler o que o admin já preencheu — e o heightmap pode ser gerado e
+// inspecionado no painel antes de existir no jogo. Ver `core/mundo.js`.
+export const CAMPOS_CHUNK = [
+  { chave: 'nome', rotulo: 'Nome do chunk', tipo: 'texto', obrigatorio: true },
+  { chave: 'descricao', rotulo: 'Descrição', tipo: 'area',
+    dica: 'O que o jogador encontra aqui. Aparece na prévia e ajuda a balancear.' },
+  { chave: 'cor', rotulo: 'Cor', tipo: 'cor',
+    dica: 'Cor da célula no mapa de chunks. Serve para ver o desenho do biome de relance.' },
+
+  // ---- Onde ele fica ----
+  { chave: 'mundoId', rotulo: 'Mundo', tipo: 'select', opcoes: [], fonte: 'reinos',
+    dica: 'O chunk pertence a este mundo. O mapa ao lado mostra a posição dele.' },
+  { chave: 'biomaId', rotulo: 'Bioma', tipo: 'select', opcoes: [], fonte: 'biomas',
+    dica: 'Bioma deste chunk. Se vazio, vale o bioma padrão do mundo.' },
+  { chave: 'tamanhoBlocos', rotulo: 'Tamanho (blocos por lado)', tipo: 'select',
+    opcoes: [
+      { valor: 8, rotulo: '8 × 8 — detalhe' },
+      { valor: 16, rotulo: '16 × 16 — pequeno' },
+      { valor: 32, rotulo: '32 × 32 — médio' },
+      { valor: 64, rotulo: '64 × 64 — grande' },
+    ],
+    dica: 'Define quantos blocos o chunk ocupa E o tamanho da grade do mapa. Mudar isto redesenha o mapa.' },
+  { chave: 'posX', rotulo: 'Chunk X', tipo: 'numero',
+    dica: 'Definida no mapa quadriculado ao lado. Este campo espelha aquele valor.' },
+  { chave: 'posY', rotulo: 'Chunk Y', tipo: 'numero',
+    dica: 'Definida no mapa quadriculado ao lado.' },
+
+  // ---- Quais chunks ganham aqui ----
+  { chave: 'peso', rotulo: 'Peso no sorteio', tipo: 'numero',
+    dica: 'Se a geração preenche esta célula ao acaso, o peso decide quão provável o chunk é. Maior = mais frequente. 0 = nunca por sorteio (só onde você colocou).' },
+  { chave: 'sobrescrever', rotulo: 'Sobrescreve o bioma', tipo: 'select',
+    opcoes: [
+      { valor: false, rotulo: 'Não — soma ao bioma' },
+      { valor: true, rotulo: 'Sim — substitui o bioma inteiro' },
+    ],
+    dica: 'Com "não", o chunk acrescenta recursos e mobs ao que o bioma já põe. Com "sim", o vale só.' },
+
+  // ---- Terreno ----
+  { chave: 'blocosSuperficie', rotulo: 'Blocos de superfície', tipo: 'multiselec',
+    opcoes: [], fonte: 'blocos',
+    dica: 'A casca de cima. Se vários, o computador sorteia entre eles com o peso de cada bloco.' },
+  { chave: 'blocosSubSolo', rotulo: 'Blocos de subsolo', tipo: 'multiselec',
+    opcoes: [], fonte: 'blocos',
+    dica: 'O que existe abaixo da superfície. É isto que o jogador cava.' },
+  { chave: 'profundidadeMin', rotulo: 'Profundidade mínima', tipo: 'numero',
+    dica: 'Camadas de subsolo garantidas. 0 = só a superfície.' },
+  { chave: 'profundidadeMax', rotulo: 'Profundidade máxima', tipo: 'numero',
+    dica: 'Até onde a caverna pode descer. Alto valor = mais mineração.' },
+
+  // ---- Altura (registrada agora, renderizada depois) ----
+  { chave: 'alturaBase', rotulo: 'Altura base', tipo: 'numero',
+    dica: 'Linha do chão, em blocos. Define se o chunk é um vale ou um platô.' },
+  { chave: 'alturaVariacao', rotulo: 'Variação de altura', tipo: 'numero',
+    dica: 'Quanto o chão sobe e desce dentro do chunk. 0 = chao totalmente plano. Dá para deixar 0.' },
+  { chave: 'suavizarAltura', rotulo: 'Suavizar (passos)', tipo: 'numero',
+    dica: 'Quantaspassadas para nivelar a transição entre colunas. Maior = morro mais redondo.' },
+
+  // ---- O que aparece ----
+  { chave: 'recursos', rotulo: 'Nós de recurso', tipo: 'multiselec',
+    opcoes: [], fonte: 'blocos',
+    dica: 'Blocos coletáveis espalhados pelo chunk. Vazio = nenhum recurso neste chunk.' },
+  { chave: 'densidadeRecursos', rotulo: 'Densidade de recursos', tipo: 'numero',
+    dica: '0 a 1. 0.1 = um recurso a cada 10 blocos. Acima de 0.4 o chunk fica atravessado de minério.' },
+  { chave: 'mobsNativas', rotulo: 'Mobs nativas', tipo: 'multiselec',
+    opcoes: [], fonte: 'monstros',
+    dica: 'Sortear entre elas na densidade abaixo.' },
+  { chave: 'densidadeMobs', rotulo: 'Densidade de mobs', tipo: 'numero',
+    dica: '0 a 1. Multiplicado pelo tamanho do chunk: um chunk 64×64 com 0.2 fica bem mais perigoso que um 8×8 com 0.2.' },
+  { chave: 'npcs', rotulo: 'NPCs deste chunk', tipo: 'multiselec',
+    opcoes: [], fonte: 'npcs',
+    dica: 'NPCs que aparecem aqui. O NPC continua tendo a própria posição — este campo é o que faz ele existir no chunk.' },
+  { chave: 'estacoes', rotulo: 'Estações', tipo: 'multiselec',
+    opcoes: [], fonte: 'estacoes',
+    dica: 'Estações de processo que aparecem aqui (sopradora, forja, farms...).' },
+
+  // ---- Para o jogador ----
+  { chave: 'podeConstruir', rotulo: 'Pode construir base', tipo: 'select',
+    opcoes: [
+      { valor: true, rotulo: 'Sim' },
+      { valor: false, rotulo: 'Não' },
+    ],
+    dica: 'Se não, o chunk é solo intransponível — sem base, sem escavação.' },
+  { chave: 'permiteEscavar', rotulo: 'Permite escavar', tipo: 'select',
+    opcoes: [
+      { valor: true, rotulo: 'Sim' },
+      { valor: false, rotulo: 'Não — superfície intacta' },
+    ],
+    dica: 'Desligue em cavernas de minério precious ou em áreas de história.' },
+  { chave: 'temAbrigo', rotulo: 'Abrigo / telhado', tipo: 'select',
+    opcoes: [
+      { valor: false, rotulo: 'Não' },
+      { valor: true, rotulo: 'Sim — teto natural' },
+    ],
+    dica: 'Marque cavernas e ruínas: aqui o jogador não é perseguido pelos monstros.' },
+  { chave: 'perigo', rotulo: 'Perigo', tipo: 'select',
+    opcoes: [
+      { valor: 'seguro', rotulo: 'Seguro' },
+      { valor: 'baixo', rotulo: 'Baixo' },
+      { valor: 'medio', rotulo: 'Médio' },
+      { valor: 'alto', rotulo: 'Alto' },
+      { valor: 'extremo', rotulo: 'Extremo' },
+    ],
+    dica: 'Multiplica o nível dos monstros gerados aqui. É o que faz uma borda de chunk perigosa.' },
+
+  // ---- Reprodução ----
+  { chave: 'seedBase', rotulo: 'Semente', tipo: 'texto',
+    placeholder: 'deixe vazio para sortear pelo nome',
+    dica: 'A mesma semente gera sempre o mesmo chunk. Preencha para o mundo ser reproduzível entre jogadores.' },
+  { chave: 'notasGeracao', rotulo: 'Notas de geração', tipo: 'area',
+    placeholder: 'a caverna só abre no nível 3; o veio de ferro fica na camada 2',
+    dica: 'Campo livre para o admin. Não afeta o jogo — é o caderno de contas do chunk.' },
+];
+
+// =====================================================================
 // SERVIDORES
 // =====================================================================
 
@@ -686,4 +818,8 @@ export const RESUMO = {
   biomas: (d) => `${d.tipo ?? '—'} · ${(d.blocosNativos ?? []).length} blocos · ${(d.mobsNativos ?? []).length} mobs`,
   npcs: (d) => `${(d.tipos ?? []).join(', ') || '—'} · movimento ${d.movimento ?? 'suave'}`,
   servidores: (d) => `${d.tipo ?? '—'} · máx ${d.maxJogadores ?? 20} jogadores`,
+  chunks: (d) =>
+    `${d.posX ?? 0},${d.posY ?? 0} · ${d.tamanhoBlocos ?? 32}bl · peso ${d.peso ?? 1} · ` +
+    `${(d.blocosSuperficie ?? []).length} sup · ${(d.mobsNativas ?? []).length} mobs · ` +
+    `${(d.npcs ?? []).length} npcs`,
 };
