@@ -23,6 +23,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Instalar Node
         uses: actions/setup-node@v4
@@ -35,6 +37,9 @@ jobs:
 
       - name: Limpar cache do Vite
         run: rm -rf node_modules/.vite
+
+      - name: Show git commit
+        run: git log -1 --oneline
 
       - name: Build
         # Vite le VITE_* do ambiente em tempo de build.

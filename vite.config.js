@@ -8,6 +8,7 @@ export default defineConfig({
   define: {
     // Build timestamp para forçar novo hash a cada build
     __BUILD_TIMESTAMP__: JSON.stringify(new Date().toISOString()),
+    __BUILD_ID__: JSON.stringify(Math.random().toString(36).substring(7)),
   },
 
   build: {
