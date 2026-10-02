@@ -85,12 +85,15 @@ function criarElementoDom(scene, { x, y, largura, altura, valor, placeholder, mu
 
   const posicionar = () => {
     if (!container || !container.scene) return;
-    // Coordenadas absolutas do container na cena -> pixels CSS no canvas
-    const absX = container.x;
-    const absY = container.y;
+    // Coordenadas absolutas do container na cena -> pixels CSS no canvas.
+    // Precisa somar a posicao (x, y) do WIDGET dentro do container: antes o
+    // input era desenhado em container.y + 5, ignorando a altura do rótulo
+    // (yCaixa), então o texto caía POR CIMA do rótulo e desalinhado da caixa
+    // visível — o defeito que deixava o admin com "inputs sobrepostos".
+    const absX = container.x + (x ?? 0);
+    const absY = container.y + (y ?? 0);
     const c = canvas.getBoundingClientRect();
     const p = pai.getBoundingClientRect();
-    // Uma unidade de cena = 1 pixel CSS (ScaleManager RESIZE com 100%)
     el.style.left = `${c.left - p.left + absX + 9}px`;
     el.style.top = `${c.top - p.top + absY + 5}px`;
     el.style.width = `${Math.max(0, largura - 18)}px`;

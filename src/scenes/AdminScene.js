@@ -795,10 +795,11 @@ export class AdminScene extends Phaser.Scene {
     const camposLargura = Phaser.Math.Clamp(camposDisponivel, LARGURA_MIN_CAMPOS, LARGURA_MAX_CAMPOS);
     const camposX = listaDireita + 40 + Math.max(0, (camposDisponivel - camposLargura) / 2);
 
-    // Verifica se há campo de imagem para mostrar preview
-    const campoImagem = campos.find((c) => c.tipo === 'imagem');
-    const temPreview = Boolean(campoImagem && (item?.[campoImagem.chave] || this._valorPreviewTemporario));
-    const previewAtivoX = temPreview ? previewX : previewX + previewLargura + GAP_COLUNA; // esconde fora da tela se não houver
+    // Preview SEMPRE visível na direita (imagem quando existir, mais uma ficha
+    // do registro). Antes só aparecia quando já havia URL de imagem, e a área
+    // direita ficava vazia na criação.
+    const temPreview = true;
+    const previewAtivoX = previewX;
 
     // --- Título ---
     const titulo = item ? `Editar: ${item.nome ?? item.id}` : `Novo registro em ${aba.label}`;
@@ -853,10 +854,9 @@ export class AdminScene extends Phaser.Scene {
       y += ctrl.altura;
     }
 
-    // --- Coluna direita: preview grande ---
-    if (temPreview) {
-      this._desenharPreviewGrande(previewAtivoX, TOPO + 44, campoImagem, item);
-    }
+    // --- Coluna direita: preview sempre visível ---
+    const campoImagem = campos.find((c) => c.tipo === 'imagem') ?? null;
+    this._desenharPreviewGrande(previewAtivoX, TOPO + 44, campoImagem, item, campos);
 
     // --- Botões de ação (alinhados à coluna central) ---
     const yAcao = Math.min(y + 8, this.scale.height - 74);
@@ -894,17 +894,34 @@ export class AdminScene extends Phaser.Scene {
   /**
    * Desenha o preview grande da imagem na coluna direita.
    */
-  _desenharPreviewGrande(x, y, campoImagem, item) {
+  _desenharPreviewGrande(x, y, campoImagem, item, campos = []) {
     const PREVIEW_GRANDE = 220;
     const padding = 12;
 
+    // Monta uma ficha do registro para a área de preview
+    const linhasFicha = [];
+    if (item) {
+      linhasFicha.push(`Nome: ${item.nome ?? '—'}`);
+      if (item.id) linhasFicha.push(`id: ${item.id}`);
+      for (const c of campos.slice(0, 10)) {
+        if (c.tipo === 'imagem' || c.chave === 'nome') continue;
+        const v = this.valorInicial(c, item?.[c.chave]);
+        if (v === '' || v === null || v === undefined) continue;
+        const txt = Array.isArray(v) ? v.join(', ') : String(v);
+        linhasFicha.push(`${c.rotulo}: ${txt.length > 42 ? txt.slice(0, 42) + '…' : txt}`);
+      }
+    } else {
+      linhasFicha.push('Novo registro — a ficha aparece aqui conforme você preenche.');
+    }
+    const alturaFicha = linhasFicha.length * 16 + 12;
+
     // Painel de fundo
-    const painel = uiPainel(this, x - 8, y - 8, LARGURA_PREVIEW + 16, PREVIEW_GRANDE + 64, 0x14100c, 0.99);
+    const painel = uiPainel(this, x - 8, y - 8, LARGURA_PREVIEW + 16, PREVIEW_GRANDE + 64 + alturaFicha, 0x14100c, 0.99);
     this.camada.add(painel);
 
     // Título
     this.camada.add(
-      uiTexto(this, x + 4, y, 'Preview da Imagem', { fontSize: '12px', color: OURO })
+      uiTexto(this, x + 4, y, 'PRÉVIA DO REGISTRO', { fontSize: '12px', color: OURO })
         .setOrigin(0, 0),
     );
 
@@ -919,7 +936,7 @@ export class AdminScene extends Phaser.Scene {
     this.camada.add(moldura);
 
     // Imagem
-    const urlAtual = item?.[campoImagem.chave] ?? this._valorPreviewTemporario ?? '';
+    const urlAtual = item?.[campoImagem?.chave] ?? this._valorPreviewTemporario ?? '';
     const img = this.add.image(x + LARGURA_PREVIEW / 2, y + 22 + PREVIEW_GRANDE / 2, 'painel')
       .setDisplaySize(PREVIEW_GRANDE - 24, PREVIEW_GRANDE - 24);
     this.camada.add(img);
@@ -934,11 +951,26 @@ export class AdminScene extends Phaser.Scene {
       .setOrigin(0.5);
     this.camada.add(semImg);
 
+    // Ficha do registro
+    let fy = y + 22 + PREVIEW_GRANDE + 12;
+    for (const linha of linhasFicha) {
+      this.camada.add(
+        uiTexto(this, x + 6, fy, linha, {
+          fontSize: '10px',
+          color: PERGAMINHO,
+          wordWrap: { width: LARGURA_PREVIEW - 12 },
+        }).setOrigin(0, 0).setAlpha(0.85),
+      );
+      fy += 16;
+    }
+
     // Guarda referências para atualização ao vivo
     this._previewGrande = { img, semImg, url: urlAtual };
 
     if (urlAtual) {
       this._carregarPreviewGrande(urlAtual);
+    } else {
+      img.setVisible(false);
     }
   }
 
