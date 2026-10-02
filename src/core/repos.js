@@ -132,6 +132,14 @@ export const repoPortais = {
   remover: (id) => removerDoc('portais', id),
 };
 
+export const repoEstacoes = {
+  listar: () => listarColecao('estacoes', 'nome'),
+  obter: (id) => obterDoc('estacoes', id),
+  criar: (dados) => criarDoc('estacoes', dados),
+  salvar: (id, dados, merge) => salvarDoc('estacoes', id, dados, merge),
+  remover: (id) => removerDoc('estacoes', id),
+};
+
 /** Uids marcados como administrador (system/admins). */
 export async function listarAdmins() {
   const docRef = obterDoc('system', 'admins');

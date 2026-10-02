@@ -9,6 +9,7 @@ import {
   repoAchievements,
   repoUsuarios,
   repoPortais,
+  repoEstacoes,
   listarAdmins,
   definirAdminUid,
 } from '../core/repos.js';
@@ -22,9 +23,11 @@ import {
   CAMPOS_REINO,
   CAMPOS_CONQUISTA,
   CAMPOS_TALENTO,
+  CAMPOS_ESTACAO,
   RESUMO,
   serializadores,
 } from '../dados/schemaAdmin.js';
+import { xpParaProximoNivel, xpTotalParaNivel } from '../core/progresso.js';
 
 // =====================================================================
 //  AdminScene — painel administrativo em DOM puro.
@@ -47,6 +50,13 @@ const ABAS = [
   { id: 'conquistas', label: 'Conquistas', icone: '🏆', repo: repoAchievements, cache: 'conquistas', campos: CAMPOS_CONQUISTA, resumo: RESUMO.conquistas },
   { id: 'portais', label: 'Portais', icone: '🌀', especial: 'portais' },
   { id: 'jogadores', label: 'Jogadores', icone: '👥', especial: 'jogadores' },
+  { id: 'estacoes', label: 'Estações', icone: '🏭', repo: repoEstacoes, cache: 'estacoes', campos: CAMPOS_ESTACAO, resumo: RESUMO.estacoes, pastaUpload: 'estacoes' },
+  { id: 'balanceamento', label: 'Bal. Tabela', icone: '⚖️', especial: 'balanceamento' },
+  { id: 'monetario', label: 'Bal. Monetário', icone: '💰', especial: 'monetario' },
+  { id: 'mundosBlocos', label: 'Mundos & Blocos', icone: '🧱', especial: 'mundosBlocos' },
+  { id: 'mundosMobs', label: 'Mundos & Mobs', icone: '🐲', especial: 'mundosMobs' },
+  { id: 'portaisNativos', label: 'Portais Nativos', icone: '🚪', especial: 'portaisNativos' },
+  { id: 'gestaoNiveis', label: 'Gestão de Níveis', icone: '📈', especial: 'gestaoNiveis' },
   { id: 'estatisticas', label: 'Estatísticas', icone: '📊', especial: 'estatisticas' },
 ];
 
@@ -77,6 +87,24 @@ const CSS = `
 #adminOverlay .bar-linha{margin:6px 0}
 #adminOverlay .bar-fundo{background:#dfe5ec;border-radius:4px;height:10px;overflow:hidden}
 #adminOverlay .bar-cheio{background:#2bb3a3;height:100%}
+/* Tema escuro */
+#adminOverlay.escuro{background:#141619;color:#e7eaee}
+#adminOverlay.escuro .topo{background:#1d2026;border-color:#33373f}
+#adminOverlay.escuro .topo h1{color:#e7eaee}
+#adminOverlay.escuro .painel{background:#1d2026;border-color:#33373f}
+#adminOverlay.escuro .status{color:#9aa4af}
+#adminOverlay.escuro input[type=text],#adminOverlay.escuro input[type=number],#adminOverlay.escuro textarea,#adminOverlay.escuro select{background:#141619;color:#e7eaee;border-color:#33373f}
+#adminOverlay.escuro .linha-item:hover{background:#262a31}
+#adminOverlay.escuro .linha-item.sel{background:#1f3a35;border-color:#2bb3a3}
+#adminOverlay.escuro .linha-item .nome{color:#e7eaee}
+#adminOverlay.escuro .linha-item .detalhe{color:#9aa4af}
+#adminOverlay.escuro .btn-secundario,#adminOverlay.escuro .btn-fechar{background:#262a31;border-color:#3a3f47;color:#e7eaee}
+#adminOverlay.escuro th,#adminOverlay.escuro td{border-color:#33373f}
+#adminOverlay.escuro th{color:#9aa4af}
+#adminOverlay.escuro .card.escuro{background:#23272e}
+#adminOverlay.escuro .bar-fundo{background:#33373f}
+#adminOverlay.escuro .chip{background:#141619;border-color:#33373f;color:#e7eaee}
+#adminOverlay.escuro .img-preview{background:#141619;border-color:#33373f}
 #adminOverlay .grid-catalogo{display:grid;grid-template-columns:300px minmax(0,1fr) 300px;gap:16px}
 #adminOverlay .painel{background:#fff;border:1px solid #dde3ea;border-radius:8px;padding:12px}
 #adminOverlay .painel h3{margin:0 0 10px;font-size:13px;color:#33404d;text-transform:uppercase;letter-spacing:.4px}
@@ -195,6 +223,7 @@ export class AdminScene extends Phaser.Scene {
         <div class="topo">
           <h1 id="adminTitulo">Itens</h1>
           <div class="status" id="adminStatus"></div>
+          <button class="btn-fechar" id="adminTema" title="Alternar claro/escuro">🌙 Escuro</button>
           <button class="btn-fechar" id="adminFechar">Fechar [F2]</button>
         </div>
         <div class="conteudo" id="adminConteudo"></div>
@@ -204,6 +233,17 @@ export class AdminScene extends Phaser.Scene {
     this.overlay = overlay;
 
     overlay.querySelector('#adminFechar').addEventListener('click', () => this.fechar());
+    const temaSalvo = localStorage.getItem('adminTema');
+    if (temaSalvo === 'escuro') {
+      overlay.classList.add('escuro');
+      overlay.querySelector('#adminTema').textContent = '☀️ Claro';
+    }
+    overlay.querySelector('#adminTema').addEventListener('click', () => {
+      overlay.classList.toggle('escuro');
+      const escuro = overlay.classList.contains('escuro');
+      overlay.querySelector('#adminTema').textContent = escuro ? '☀️ Claro' : '🌙 Escuro';
+      localStorage.setItem('adminTema', escuro ? 'escuro' : 'claro');
+    });
     this.renderizarNav();
     this.renderizarConteudo();
   }
@@ -265,6 +305,12 @@ export class AdminScene extends Phaser.Scene {
     if (aba.especial === 'portais') return this.renderizarPortais(conteudo);
     if (aba.especial === 'jogadores') return this.renderizarJogadores(conteudo);
     if (aba.especial === 'estatisticas') return this.renderizarEstatisticas(conteudo);
+    if (aba.especial === 'balanceamento') return this.renderizarBalanceamento(conteudo);
+    if (aba.especial === 'monetario') return this.renderizarMonetario(conteudo);
+    if (aba.especial === 'mundosBlocos') return this.renderizarMundos(conteudo, 'blocos');
+    if (aba.especial === 'mundosMobs') return this.renderizarMundos(conteudo, 'mobs');
+    if (aba.especial === 'portaisNativos') return this.renderizarPortaisNativos(conteudo);
+    if (aba.especial === 'gestaoNiveis') return this.renderizarGestaoNiveis(conteudo);
     return this.renderizarCatalogo(conteudo, aba);
   }
 
@@ -332,7 +378,9 @@ export class AdminScene extends Phaser.Scene {
       const linha = document.createElement('div');
       linha.className = 'linha-item' + (this.selecionado?.item?.id === item.id ? ' sel' : '');
       linha.innerHTML = `
-        <img src="${item.imagem ?? ''}" alt="" onerror="this.style.visibility='hidden'">
+        ${item.imagem
+          ? `<img src="${item.imagem}" alt="" onerror="this.style.visibility='hidden'">`
+          : `<div style="width:30px;height:30px;border-radius:6px;background:#e8edf2;display:flex;align-items:center;justify-content:center;font-weight:700;color:#7b8794">${String(item.nome ?? item.id).slice(0, 1).toUpperCase()}</div>`}
         <div><div class="nome">${item.nome ?? item.id}</div><div class="detalhe">${aba.resumo?.(item) ?? ''}</div></div>
         <div class="x" title="Apagar">✕</div>`;
       linha.addEventListener('click', (ev) => {
@@ -365,6 +413,147 @@ export class AdminScene extends Phaser.Scene {
     }
   }
 
+  // ---------- editores estruturados ----------
+
+  /** Linhas "item + quantidade" (Rende / Insumos / Saída / Orbes). */
+  criarEditorListaQtd(valorTexto, itensCat) {
+    const el = document.createElement('div');
+    el.className = 'editor-lista';
+    const itensMap = new Map(itensCat.map((i) => [i.id, i]));
+    const linhas = String(valorTexto ?? '')
+      .split(',')
+      .map((p) => p.trim())
+      .filter(Boolean)
+      .map((p) => {
+        const [id, qtd] = p.split(':');
+        return { id: (id ?? '').trim(), qtd: Number(qtd) || 1 };
+      });
+
+    const render = () => {
+      el.innerHTML = '';
+      for (const linha of linhas) {
+        const item = itensMap.get(linha.id);
+        const row = document.createElement('div');
+        row.style.cssText = 'display:flex;gap:6px;margin-bottom:6px;align-items:center';
+        row.innerHTML = `
+          <img src="${item?.imagem ?? ''}" style="width:26px;height:26px;border-radius:5px;object-fit:cover;background:#e8edf2" onerror="this.style.visibility='hidden'">
+          <select style="flex:1">${itensCat.map((i) => `<option value="${i.id}" ${i.id === linha.id ? 'selected' : ''}>${i.nome ?? i.id}</option>`).join('')}${linha.id && !itensMap.has(linha.id) ? `<option value="${linha.id}" selected>${linha.id}</option>` : ''}</select>
+          <input type="number" min="1" value="${linha.qtd}" style="width:70px">
+          <button type="button" class="btn-perigo" style="padding:4px 8px">✕</button>`;
+        const [sel, num] = row.querySelectorAll('select,input');
+        sel.addEventListener('change', () => { linha.id = sel.value; render(); });
+        num.addEventListener('input', () => { linha.qtd = Number(num.value) || 1; });
+        row.querySelector('button').addEventListener('click', () => { linhas.splice(linhas.indexOf(linha), 1); render(); });
+        el.appendChild(row);
+      }
+      const add = document.createElement('button');
+      add.type = 'button';
+      add.className = 'btn-secundario';
+      add.style.cssText = 'padding:5px 10px;font-size:12px';
+      add.textContent = '+ adicionar item';
+      add.addEventListener('click', () => { linhas.push({ id: itensCat[0]?.id ?? '', qtd: 1 }); render(); });
+      el.appendChild(add);
+    };
+    render();
+
+    return {
+      el,
+      obter: () => linhas.map((l) => `${l.id}:${l.qtd}`).filter((s) => s.split(':')[0]).join(', '),
+    };
+  }
+
+  /** Linhas "item + chance + quantidade" (Loot / Loot do mundo). */
+  criarEditorLoot(valorTexto, itensCat) {
+    const el = document.createElement('div');
+    const itensMap = new Map(itensCat.map((i) => [i.id, i]));
+    const linhas = String(valorTexto ?? '')
+      .split(',')
+      .map((p) => p.trim())
+      .filter(Boolean)
+      .map((p) => {
+        const [id, chance, qtd] = p.split(':');
+        return { id: (id ?? '').trim(), chance: Number(chance) || 0, qtd: Number(qtd) || 1 };
+      });
+
+    const render = () => {
+      el.innerHTML = '';
+      for (const linha of linhas) {
+        const item = itensMap.get(linha.id);
+        const row = document.createElement('div');
+        row.style.cssText = 'display:flex;gap:6px;margin-bottom:6px;align-items:center';
+        row.innerHTML = `
+          <img src="${item?.imagem ?? ''}" style="width:26px;height:26px;border-radius:5px;object-fit:cover;background:#e8edf2" onerror="this.style.visibility='hidden'">
+          <select style="flex:1">${itensCat.map((i) => `<option value="${i.id}" ${i.id === linha.id ? 'selected' : ''}>${i.nome ?? i.id}</option>`).join('')}${linha.id && !itensMap.has(linha.id) ? `<option value="${linha.id}" selected>${linha.id}</option>` : ''}</select>
+          <input type="number" min="0" max="100" placeholder="chance" value="${linha.chance}" style="width:70px">
+          <input type="number" min="1" placeholder="qtd" value="${linha.qtd}" style="width:60px">
+          <button type="button" class="btn-perigo" style="padding:4px 8px">✕</button>`;
+        const [sel, chance, qtd] = row.querySelectorAll('select,input');
+        sel.addEventListener('change', () => { linha.id = sel.value; render(); });
+        chance.addEventListener('input', () => { linha.chance = Number(chance.value) || 0; });
+        qtd.addEventListener('input', () => { linha.qtd = Number(qtd.value) || 1; });
+        row.querySelector('button').addEventListener('click', () => { linhas.splice(linhas.indexOf(linha), 1); render(); });
+        el.appendChild(row);
+      }
+      const add = document.createElement('button');
+      add.type = 'button';
+      add.className = 'btn-secundario';
+      add.style.cssText = 'padding:5px 10px;font-size:12px';
+      add.textContent = '+ adicionar drop';
+      add.addEventListener('click', () => { linhas.push({ id: itensCat[0]?.id ?? '', chance: 50, qtd: 1 }); render(); });
+      el.appendChild(add);
+    };
+    render();
+
+    return {
+      el,
+      obter: () => linhas.map((l) => `${l.id}:${l.chance}:${l.qtd}`).filter((s) => s.split(':')[0]).join(', '),
+    };
+  }
+
+  /** Linhas "atributo + valor" (Bônus por nível / Efeitos / Níveis requeridos). */
+  criarEditorEfeitos(valorTexto) {
+    const ATRIBUTOS = ['fis', 'men', 'soc', 'vidaMax', 'poderMax', 'defesa', 'regenVida', 'regenPoder', 'carga', 'poderMineracao', 'poderPct', 'xpPct', 'ouroBonus', 'vendaPct', 'reducaoDanoPct', 'alcanceConstrucao', 'velocidadeMaquinaPct', 'escudoPct', 'reparo'];
+    const el = document.createElement('div');
+    const linhas = String(valorTexto ?? '')
+      .split(',')
+      .map((p) => p.trim())
+      .filter(Boolean)
+      .map((p) => {
+        const [k, v] = p.split(':');
+        return { k: (k ?? '').trim(), v: String(v ?? '').trim() };
+      });
+
+    const render = () => {
+      el.innerHTML = '';
+      for (const linha of linhas) {
+        const row = document.createElement('div');
+        row.style.cssText = 'display:flex;gap:6px;margin-bottom:6px';
+        row.innerHTML = `
+          <select style="flex:1">${ATRIBUTOS.map((a) => `<option ${a === linha.k ? 'selected' : ''}>${a}</option>`).join('')}</select>
+          <input type="text" value="${linha.v}" placeholder="+4 ou 10" style="width:90px">
+          <button type="button" class="btn-perigo" style="padding:4px 8px">✕</button>`;
+        const [sel, val] = row.querySelectorAll('select,input');
+        sel.addEventListener('change', () => { linha.k = sel.value; });
+        val.addEventListener('input', () => { linha.v = val.value; });
+        row.querySelector('button').addEventListener('click', () => { linhas.splice(linhas.indexOf(linha), 1); render(); });
+        el.appendChild(row);
+      }
+      const add = document.createElement('button');
+      add.type = 'button';
+      add.className = 'btn-secundario';
+      add.style.cssText = 'padding:5px 10px;font-size:12px';
+      add.textContent = '+ adicionar efeito';
+      add.addEventListener('click', () => { linhas.push({ k: ATRIBUTOS[0], v: '+1' }); render(); });
+      el.appendChild(add);
+    };
+    render();
+
+    return {
+      el,
+      obter: () => linhas.map((l) => `${l.k}:${l.v}`).filter((s) => s.split(':')[0] && s.split(':')[1]).join(', '),
+    };
+  }
+
   // ---------- formulário (DOM nativo) ----------
 
   valorInicial(campo, bruto) {
@@ -375,6 +564,11 @@ export class AdminScene extends Phaser.Scene {
         case 'uso': return [];
         default: return '';
       }
+    }
+    // Receitas: o banco grava ms, o admin edita em SEGUNDOS.
+    if (campo.chave === 'tempoMs') {
+      const n = Number(bruto);
+      return Number.isFinite(n) ? n / 1000 : '';
     }
     const ser = serializadores[campo.chave];
     if (ser) return ser(bruto);
@@ -404,6 +598,33 @@ export class AdminScene extends Phaser.Scene {
       label.innerHTML = `<span>${campo.rotulo}${campo.obrigatorio ? ' *' : ''}</span>`;
 
       let controle;
+
+      // Editores estruturados para listas (Loot / Rende / Insumos / Saída / Bônus)
+      if (['loot', 'lootGlobal'].includes(campo.chave)) {
+        const editorLoot = this.criarEditorLoot(valor, ctx.itensCat ?? []);
+        refs[campo.chave] = { campo, obter: editorLoot.obter };
+        label.appendChild(editorLoot.el);
+        if (campo.dica) label.insertAdjacentHTML('beforeend', `<div class="dica">${campo.dica}</div>`);
+        form.appendChild(label);
+        continue;
+      }
+      if (['rende', 'insumos', 'saida', 'recompensaOrbes'].includes(campo.chave)) {
+        const editorLista = this.criarEditorListaQtd(valor, ctx.itensCat ?? []);
+        refs[campo.chave] = { campo, obter: editorLista.obter };
+        label.appendChild(editorLista.el);
+        if (campo.dica) label.insertAdjacentHTML('beforeend', `<div class="dica">${campo.dica}</div>`);
+        form.appendChild(label);
+        continue;
+      }
+      if (['bonusPorNivel', 'efeitos', 'preRequisitoNiveis'].includes(campo.chave)) {
+        const editorEfeitos = this.criarEditorEfeitos(valor);
+        refs[campo.chave] = { campo, obter: editorEfeitos.obter };
+        label.appendChild(editorEfeitos.el);
+        if (campo.dica) label.insertAdjacentHTML('beforeend', `<div class="dica">${campo.dica}</div>`);
+        form.appendChild(label);
+        continue;
+      }
+
       if (campo.tipo === 'area') {
         controle = document.createElement('textarea');
         controle.value = valor ?? '';
@@ -528,6 +749,10 @@ export class AdminScene extends Phaser.Scene {
         v = limpo === '' ? 0 : Number(limpo);
         if (!Number.isFinite(v)) v = 0;
       }
+      if (ref.campo.chave === 'tempoMs') {
+        const n = Number(v);
+        v = Number.isFinite(n) ? Math.round(n * 1000) : 0;
+      }
       if (ref.campo.parse) v = ref.campo.parse(v);
       const vazio =
         v === '' || v === null || v === undefined ||
@@ -648,6 +873,172 @@ export class AdminScene extends Phaser.Scene {
     });
   }
 
+  // ---------- novas visões de balanceamento ----------
+
+  /** Tabela dinâmica de balanceamento: todos os registros × atributos numéricos, ordenável por coluna. */
+  async renderizarBalanceamento(conteudo) {
+    conteudo.innerHTML = '<div class="painel">Carregando…</div>';
+    const [itens, classes, talentos, monstros, receitas, reinos, conquistas, estacoes] = await Promise.all([
+      this.carregar('itens', () => repoItens.listar()),
+      this.carregar('classes', () => repoClasses.listar()),
+      this.carregar('talentos', () => repoSkills.listar()),
+      this.carregar('monstros', () => repoMonstros.listar()),
+      this.carregar('receitas', () => repoRecipes.listar()),
+      this.carregar('reinos', () => repoWorldTemplates.listar()),
+      this.carregar('conquistas', () => repoAchievements.listar()),
+      this.carregar('estacoes', () => repoEstacoes.listar()),
+    ]);
+    if (!this.overlay) return;
+
+    const grupos = [
+      ['Item', itens], ['Classe', classes], ['Talento', talentos], ['Monstro', monstros],
+      ['Receita', receitas], ['Reino', reinos], ['Conquista', conquistas], ['Estação', estacoes],
+    ];
+    const linhas = [];
+    const chavesNumericas = new Set();
+    for (const [grupo, lista] of grupos) {
+      for (const r of lista) {
+        const nums = {};
+        for (const [k, v] of Object.entries(r)) {
+          if (typeof v === 'number' && Number.isFinite(v)) { nums[k] = v; chavesNumericas.add(k); }
+        }
+        linhas.push({ grupo, nome: r.nome ?? r.id, nums });
+      }
+    }
+    const colunas = [...chavesNumericas].sort();
+    const ordenar = this._ordemBal ?? { chave: 'nome', dir: 1 };
+    const linhasOrdenadas = [...linhas].sort((a, b) => {
+      const va = ordenar.chave === 'nome' ? a.nome : (a.nums[ordenar.chave] ?? -Infinity);
+      const vb = ordenar.chave === 'nome' ? b.nome : (b.nums[ordenar.chave] ?? -Infinity);
+      if (va === vb) return 0;
+      return (va > vb ? 1 : -1) * ordenar.dir;
+    });
+
+    conteudo.innerHTML = `
+      <div class="painel">
+        <h3>Tabela de balanceamento</h3>
+        <p style="font-size:12px;color:#7b8794">Clique no cabeçalho para ordenar. Cada célula mostra o valor do atributo numérico do registro.</p>
+        <div style="overflow:auto"><table id="balTable">
+          <thead><tr>
+            <th data-k="grupo" style="cursor:pointer">Cadastro</th>
+            <th data-k="nome" style="cursor:pointer">Nome</th>
+            ${colunas.map((c) => `<th data-k="${c}" style="cursor:pointer">${c}</th>`).join('')}
+          </tr></thead>
+          <tbody>
+            ${linhasOrdenadas.map((l) => `<tr>
+              <td>${l.grupo}</td><td>${l.nome}</td>
+              ${colunas.map((c) => `<td>${l.nums[c] ?? '—'}</td>`).join('')}
+            </tr>`).join('')}
+          </tbody>
+        </table></div>
+      </div>`;
+    conteudo.querySelectorAll('#balTable th').forEach((th) => {
+      th.addEventListener('click', () => {
+        const k = th.dataset.k;
+        this._ordemBal = { chave: k, dir: this._ordemBal?.chave === k ? -this._ordemBal.dir : 1 };
+        this.renderizarBalanceamento(conteudo);
+      });
+    });
+  }
+
+  /** Balanceamento monetário: itens pelo valor em ouro. */
+  async renderizarMonetario(conteudo) {
+    conteudo.innerHTML = '<div class="painel">Carregando…</div>';
+    const itens = await this.carregar('itens', () => repoItens.listar());
+    if (!this.overlay) return;
+    const ordenar = this._ordemMon ?? { chave: 'valor', dir: -1 };
+    const linhas = [...itens].sort((a, b) => {
+      const va = a[ordenar.chave] ?? '';
+      const vb = b[ordenar.chave] ?? '';
+      if (va === vb) return 0;
+      return (va > vb ? 1 : -1) * ordenar.dir;
+    });
+    conteudo.innerHTML = `
+      <div class="painel">
+        <h3>Balanceamento monetário</h3>
+        <div style="overflow:auto"><table>
+          <thead><tr>
+            <th data-k="nome" style="cursor:pointer">Item</th>
+            <th data-k="tipo" style="cursor:pointer">Tipo</th>
+            <th data-k="raridade" style="cursor:pointer">Raridade</th>
+            <th data-k="valor" style="cursor:pointer">Valor (ouro)</th>
+            <th data-k="stackMax" style="cursor:pointer">Pilha máx</th>
+          </tr></thead>
+          <tbody>${linhas.map((i) => `<tr>
+            <td><img src="${i.imagem ?? ''}" style="width:22px;height:22px;border-radius:4px;vertical-align:middle;margin-right:6px" onerror="this.style.visibility='hidden'">${i.nome ?? i.id}</td>
+            <td>${i.tipo ?? '—'}</td><td>${i.raridade ?? '—'}</td><td>${i.valor ?? 0}</td><td>${i.stackMax ?? '—'}</td>
+          </tr>`).join('') || '<tr><td colspan="5">Sem itens.</td></tr>'}</tbody>
+        </table></div>
+      </div>`;
+    conteudo.querySelectorAll('th').forEach((th) => {
+      th.addEventListener('click', () => {
+        const k = th.dataset.k;
+        this._ordemMon = { chave: k, dir: this._ordemMon?.chave === k ? -this._ordemMon.dir : 1 };
+        this.renderizarMonetario(conteudo);
+      });
+    });
+  }
+
+  /** Mundos e seus blocos/mobs nativos. */
+  async renderizarMundos(conteudo, modo) {
+    conteudo.innerHTML = '<div class="painel">Carregando…</div>';
+    const [reinos, monstros] = await Promise.all([
+      this.carregar('reinos', () => repoWorldTemplates.listar()),
+      this.carregar('monstros', () => repoMonstros.listar()),
+    ]);
+    if (!this.overlay) return;
+    const monstrosMap = new Map(monstros.map((m) => [m.id, m]));
+    conteudo.innerHTML = `
+      <div class="painel">
+        <h3>${modo === 'mobs' ? 'Mundos & mobs que spawnam' : 'Mundos & seus blocos nativos'}</h3>
+        <table>
+          <thead><tr><th>Reino</th><th>Bioma</th><th>Níveis</th><th>Dificuldade</th><th>${modo === 'mobs' ? 'Mobs' : 'Loot do mundo'}</th></tr></thead>
+          <tbody>${reinos.map((r) => `<tr>
+            <td>${r.nome ?? r.id}</td>
+            <td>${r.bioma ?? '—'}</td>
+            <td>${r.faixaMin ?? 1}–${r.faixaMax ?? 9}</td>
+            <td>${'★'.repeat(Math.min(5, r.dificuldade ?? 1))}</td>
+            <td>${modo === 'mobs'
+              ? (r.monstrosPossiveis ?? []).map((id) => monstrosMap.get(id)?.nome ?? id).join(', ') || '—'
+              : (Array.isArray(r.lootGlobal) ? `${r.lootGlobal.length} drop(s)` : (r.lootGlobal ? String(r.lootGlobal).slice(0, 40) : '—'))}</td>
+          </tr>`).join('') || '<tr><td colspan="5">Sem reinos.</td></tr>'}</tbody>
+        </table>
+      </div>`;
+  }
+
+  /** Portais nativos cadastrados. */
+  async renderizarPortaisNativos(conteudo) {
+    conteudo.innerHTML = '<div class="painel">Carregando…</div>';
+    const portais = await this.carregar('portais', () => repoPortais.listar());
+    if (!this.overlay) return;
+    conteudo.innerHTML = `
+      <div class="painel">
+        <h3>Portais nativos</h3>
+        <p style="font-size:12px;color:#7b8794">Portais que levam a mapas extras (publicados pelos jogadores ou fixos).</p>
+        <table>
+          <thead><tr><th>Jogador</th><th>Base</th><th>Nível</th><th>Estado</th></tr></thead>
+          <tbody>${portais.map((p) => `<tr><td>${p.nome ?? '—'}</td><td>${p.nomeBase ?? '—'}</td><td>${p.nivel ?? 1}</td><td>${p.ativo ? '🟢 ativo' : '⚫ oculto'}</td></tr>`).join('') || '<tr><td colspan="4">Nenhum portal.</td></tr>'}</tbody>
+        </table>
+      </div>`;
+  }
+
+  /** Gestão de níveis: curva de XP por nível. */
+  renderizarGestaoNiveis(conteudo) {
+    const linhas = [];
+    for (let n = 1; n <= 60; n += 1) {
+      linhas.push(`<tr><td>${n}</td><td>${xpParaProximoNivel(n)}</td><td>${xpTotalParaNivel(n)}</td></tr>`);
+    }
+    conteudo.innerHTML = `
+      <div class="painel">
+        <h3>Gestão de níveis — curva de XP</h3>
+        <p style="font-size:12px;color:#7b8794">XP necessário para subir de cada nível e XP total acumulado. Ajuste a curva em <code>src/core/progresso.js</code>.</p>
+        <div style="max-height:60vh;overflow:auto"><table>
+          <thead><tr><th>Nível</th><th>XP para próximo</th><th>XP total</th></tr></thead>
+          <tbody>${linhas.join('')}</tbody>
+        </table></div>
+      </div>`;
+  }
+
   async renderizarEstatisticas(conteudo) {
     conteudo.innerHTML = '<div class="painel">Carregando…</div>';
     const [usuarios, portais, itens, classes, talentos, monstros, receitas, reinos, conquistas] = await Promise.all([
@@ -691,6 +1082,14 @@ export class AdminScene extends Phaser.Scene {
         ${Object.entries(porVocacao).sort((a, b) => b[1] - a[1]).map(([v, n]) => `
           <div class="bar-linha"><div style="display:flex;justify-content:space-between;font-size:12px"><span>${v}</span><span>${n}</span></div>
           <div class="bar-fundo"><div class="bar-cheio" style="width:${Math.round((n / maxVoc) * 100)}%"></div></div></div>`).join('') || '<p style="color:#7b8794">Sem dados.</p>'}
+      </div>
+      <div class="painel" style="margin-top:16px">
+        <h3>Quadradinhos cadastrados (itens)</h3>
+        <div style="display:flex;flex-wrap:wrap;gap:6px">
+          ${itens.map((i) => i.imagem
+            ? `<img src="${i.imagem}" title="${i.nome ?? i.id}" style="width:38px;height:38px;border-radius:6px;object-fit:cover;background:#eef1f5">`
+            : `<div title="${i.nome ?? i.id}" style="width:38px;height:38px;border-radius:6px;background:#eef1f5;display:flex;align-items:center;justify-content:center;font-size:11px;color:#7b8794">${String(i.nome ?? '?').slice(0, 2)}</div>`).join('') || '<p style="color:#7b8794">Sem itens.</p>'}
+        </div>
       </div>`;
   }
 }

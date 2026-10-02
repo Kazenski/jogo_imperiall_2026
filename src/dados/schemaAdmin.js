@@ -246,7 +246,7 @@ export const CAMPOS_RECEITA = [
     dica: 'item:quantidade', parse: parseListaQtd },
   { chave: 'saida', rotulo: 'Saída', tipo: 'area', placeholder: 'espada_ferro:1',
     dica: 'item:quantidade', parse: parseListaQtd },
-  { chave: 'tempoMs', rotulo: 'Tempo (ms)', tipo: 'numero', dica: '1000 = 1 segundo' },
+  { chave: 'tempoMs', rotulo: 'Tempo (segundos)', tipo: 'numero', dica: 'Em segundos (ex.: 2 = 2s). O banco grava ms (×1000).' },
   { chave: 'custoPoder', rotulo: 'Custo de Poder', tipo: 'numero' },
   { chave: 'experiencia', rotulo: 'Experiência concedida', tipo: 'numero' },
 ];
@@ -269,6 +269,19 @@ export const CAMPOS_REINO = [
   { chave: 'lootGlobal', rotulo: 'Loot do mundo', tipo: 'area',
     placeholder: 'pedra:70:3, madeira:70:4',
     dica: 'item:chance:quantidade', parse: parseLoot },
+];
+
+// =====================================================================
+// ESTAÇÕES DE USO (máquinas e artifícios de craft)
+// =====================================================================
+
+export const CAMPOS_ESTACAO = [
+  { chave: 'nome', rotulo: 'Nome da estação', tipo: 'texto', obrigatorio: true, placeholder: 'Ex.: Mesa Alquímica' },
+  { chave: 'descricao', rotulo: 'Descrição', tipo: 'area', placeholder: 'O que essa estação faz no jogo.' },
+  { chave: 'imagem', rotulo: 'Imagem', tipo: 'imagem', pastaUpload: 'estacoes' },
+  { chave: 'nivelMin', rotulo: 'Nível mínimo para usar', tipo: 'numero' },
+  { chave: 'custoPoder', rotulo: 'Custo de poder por uso', tipo: 'numero' },
+  { chave: 'cor', rotulo: 'Cor (hex, ex.: #7ba23f)', tipo: 'texto' },
 ];
 
 // =====================================================================
@@ -356,6 +369,7 @@ export const RESUMO = {
     `nv ${d.faixaMin ?? 1}–${d.faixaMax ?? 5} · vida ${d.vidaMax ?? 50} · ${d.comportamento ?? 'errante'}`,
   receitas: (d) => `${ROTULOS_ESTACAO[d.estacao] ?? d.estacao ?? '—'} · nv ${d.nivelMin ?? 1}+`,
   reinos: (d) => `${d.bioma ?? '—'} · nv ${d.faixaMin ?? 1}–${d.faixaMax ?? 9} · diff ${d.dificuldade ?? 1}`,
+  estacoes: (d) => `nv ${d.nivelMin ?? 1}+ · custo ${d.custoPoder ?? 0} poder`,
   conquistas: (d) => `${d.tipo ?? '—'} · meta ${d.meta ?? '?'} · chave "${d.chave ?? ''}"`,
   talentos: (d) =>
     `${d.ramo || 'raiz'} · ${d.tipo ?? '—'} · ${d.custoPontos ?? 1}pt · nv ${d.nivelMin ?? 1}` +
