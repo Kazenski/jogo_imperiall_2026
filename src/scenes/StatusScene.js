@@ -1,6 +1,6 @@
 import Phaser from 'phaser';
 import { TEXTURAS } from './BootScene.js';
-import { SLOTS, bonusEquipados } from '../core/personagem.js';
+import { SLOTS, bonusEquipados, totalPontosAtributo, gastarPontoAtributo } from '../core/personagem.js';
 import { buscarItem, buscarClasse } from '../core/catalogo.js';
 import { OURO, PERGAMINHO } from '../constants.js';
 import {
@@ -99,6 +99,26 @@ export class StatusScene extends Phaser.Scene {
     for (const [rotulo, valor] of linhas) {
       y = this.criarLinhaStat(colunaX, y, rotulo, valor);
     }
+
+    // ---------- Distribuição de pontos de atributo (nativos + extras) ----------
+    y += 10;
+    const tp = totalPontosAtributo(this.estado);
+    const baseFis = this.estado?.atributos?.fis ?? 0;
+    const baseMen = this.estado?.atributos?.men ?? 0;
+    const baseSoc = this.estado?.atributos?.soc ?? 0;
+    const jaGastos = baseFis + baseMen + baseSoc;
+    const livres = Math.max(0, tp.total - jaGastos);
+
+    y = this.criarSecao(colunaX, y, `Atributos base (${livres} livre${livres !== 1 ? 's' : ''} | nativos: ${tp.nativos} + extras: ${tp.extras})`);
+    y = this.criarLinhaAttrBtn(colunaX, y, 'FIS', baseFis, () => {
+      if (gastarPontoAtributo(this.estado, 'fis')) { this.toast('FIS +1'); this.relayout(); } else this.toast('Sem pontos livres.');
+    });
+    y = this.criarLinhaAttrBtn(colunaX, y, 'MEN', baseMen, () => {
+      if (gastarPontoAtributo(this.estado, 'men')) { this.toast('MEN +1'); this.relayout(); } else this.toast('Sem pontos livres.');
+    });
+    y = this.criarLinhaAttrBtn(colunaX, y, 'SOC', baseSoc, () => {
+      if (gastarPontoAtributo(this.estado, 'soc')) { this.toast('SOC +1'); this.relayout(); } else this.toast('Sem pontos livres.');
+    });
 
     y += 10;
     y = this.criarSecao(colunaX, y, 'Combate');
@@ -300,6 +320,22 @@ export class StatusScene extends Phaser.Scene {
     uiTexto(this, x, y, rotulo, { fontSize: '12px' }).setAlpha(0.75);
     uiTexto(this, x + 200, y, String(valor), { fontSize: '12px', color: PERGAMINHO });
     return y + 19;
+  }
+
+  /** Linha de atributo com botão + para distribuir pontos. */
+  criarLinhaAttrBtn(x, y, nome, valorAtual, aoClicar) {
+    uiTexto(this, x, y, `${nome} (${valorAtual})`, { fontSize: '12px' }).setAlpha(0.75);
+    const b = botao(this, x + 200, y + 2, '+', aoClicar, {
+      largura: 24,
+      altura: 24,
+      tamanho: '14px',
+      cor: 0x8a6a2f,
+      corHover: 0x9a7a3f,
+      corTexto: PERGAMINHO,
+      raio: 4,
+    });
+    this.raiz.add(b.caixa);
+    return y + 26;
   }
 
   /** Resume os bonus somados de tudo que esta equipado. */

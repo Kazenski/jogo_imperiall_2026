@@ -24,6 +24,7 @@ export function estadoInicial() {
     ouro: 0,
     pontosTalento: 0,
     pontosAtributo: 0,
+    pontosAtributoExtras: 0, // pontos extras (missões, conquistas, itens, admin) — além dos nativos por nível
     vocacaoId: null,
     vida: 100,
     vidaMax: 100,
@@ -58,9 +59,35 @@ export function estadoInicial() {
 
 // ---------- atributos e derivados ----------
 
-/** Pontos por nivel (a partir do 2). */
+/** Pontos por nivel (a partir do 2) — nativos do sistema de nível. */
 export function pontosPorNivel(nivel) {
   return Math.max(0, Math.floor((nivel - 1) / 2)) + Math.max(0, nivel - 1);
+}
+
+/** Total de pontos de atributo disponíveis = nativos (por nível) + extras (missões, itens, admin). */
+export function totalPontosAtributo(estado) {
+  const nativos = pontosPorNivel(estado?.nivel ?? 1);
+  const extras = estado?.pontosAtributoExtras ?? 0;
+  return { nativos, extras, total: nativos + extras };
+}
+
+/** Concede pontos de atributo extras (fora do ganho nativo por nível). */
+export function concederPontosAtributoExtras(estado, qtd = 1) {
+  estado.pontosAtributoExtras = (estado.pontosAtributoExtras ?? 0) + Math.max(0, Math.floor(qtd));
+  return estado.pontosAtributoExtras;
+}
+
+/** Gasta pontos de atributo (usa extras primeiro, depois nativos). Retorna true se conseguiu gastar. */
+export function gastarPontoAtributo(estado, atributo) {
+  const { nativos, extras, total } = totalPontosAtributo(estado);
+  const jaGastos = (estado.atributos?.fis ?? 0) + (estado.atributos?.men ?? 0) + (estado.atributos?.soc ?? 0);
+  if (jaGastos >= total) return false;
+  // Prioriza gastar os extras primeiro
+  if (extras > 0) {
+    estado.pontosAtributoExtras = extras - 1;
+  }
+  estado.atributos[atributo] = (estado.atributos[atributo] ?? 0) + 1;
+  return true;
 }
 
 /**
@@ -228,6 +255,76 @@ export function consumirItem(inv, itemId, qtd = 1) {
     restante -= consumo;
   }
   return qtd - restante;
+}
+
+// ---------- Agrupar itens (botão "Agrupar" no inventário) ----------
+
+/**
+ * Junta pilhas do mesmo itemId até o limite de stackMax.
+ * - Itens com upgrades NÃO são agrupados (cada um tem histórico próprio).
+ * - Perecíveis: só agrupam se dataValidade for **exatamente igual**.
+ * - Remove pilhas vazias.
+ * Retorna o número de pilhas que foram fundidas.
+ */
+export function agruparItens(inv, catalogo) {
+  if (!inv?.itens?.length) return 0;
+  let fundidas = 0;
+
+  // Agrupa por itemId + (perecivel ? dataValidade : null) + (tem upgrades ? 'unique' : 'stackable')
+  const grupos = new Map();
+
+  for (const pilha of inv.itens) {
+    const def = catalogo?.indice?.itens?.[pilha.itemId];
+    const perecivel = def?.perecivel ?? false;
+    const stackMax = def?.stackMax ?? 1000;
+    const temUpgrades = pilha.upgrades?.length > 0;
+
+    const chave = temUpgrades
+      ? `${pilha.itemId}#unique#${pilha.uid}` // cada pilha com upgrade é única
+      : perecivel
+        ? `${pilha.itemId}#perecivel#${pilha.dataValidade ?? 'sem-data'}`
+        : `${pilha.itemId}#normal`;
+
+    if (!grupos.has(chave)) grupos.set(chave, { pilhas: [], stackMax });
+    grupos.get(chave).pilhas.push(pilha);
+  }
+
+  const novasPilhas = [];
+  for (const [, grupo] of grupos) {
+    const { pilhas, stackMax } = grupo;
+
+    if (pilhas.length === 1) {
+      novasPilhas.push(pilhas[0]);
+      continue;
+    }
+
+    // Ordena: pilhas com menor qtd primeiro (para preencher as que já existem)
+    pilhas.sort((a, b) => a.qtd - b.qtd);
+
+    let atual = { ...pilhas[0] };
+    for (let i = 1; i < pilhas.length; i += 1) {
+      const prox = pilhas[i];
+      const espaco = stackMax - atual.qtd;
+      if (espaco >= prox.qtd) {
+        atual.qtd += prox.qtd;
+        fundidas += 1;
+      } else if (espaco > 0) {
+        atual.qtd = stackMax;
+        fundidas += 1;
+        // O que sobra vira nova pilha base
+        const resto = prox.qtd - espaco;
+        novasPilhas.push(atual);
+        atual = { ...prox, qtd: resto };
+      } else {
+        novasPilhas.push(atual);
+        atual = { ...prox };
+      }
+    }
+    novasPilhas.push(atual);
+  }
+
+  inv.itens = novasPilhas;
+  return fundidas;
 }
 
 export function slotsUsados(inv) {

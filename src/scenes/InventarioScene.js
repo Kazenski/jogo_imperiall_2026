@@ -2,7 +2,7 @@ import Phaser from 'phaser';
 import { TEXTURAS } from './BootScene.js';
 import { OURO, PERGAMINHO } from '../constants.js';
 import { buscarItem } from '../core/catalogo.js';
-import { nivelDeUpgrades, removerItem } from '../core/personagem.js';
+import { nivelDeUpgrades, removerItem, agruparItens } from '../core/personagem.js';
 import { usarOrbe, usarConsumivel } from '../core/regras.js';
 import {
   texto as uiTexto,
@@ -862,6 +862,13 @@ export class InventarioScene extends Phaser.Scene {
     const y = this.y0 + this.alturaPainel - 26;
     const centro = this.x0 + this.larguraUtil / 2;
 
+    this.add.existing(
+      botao(this, centro + 250, y, 'Agrupar', () => {
+        const fundidas = agruparItens(this.estado.inventario, this.catalogo);
+        this.toast(fundidas > 0 ? `${fundidas} pilha(s) agrupada(s).` : 'Nada para agrupar.');
+        this.redesenhar();
+      }, { largura: 110, cor: 0x8a6a2f, corHover: 0x9a7a3f, corTexto: PERGAMINHO }).caixa,
+    );
     this.add.existing(
       botao(this, centro + 90, y, 'Salvar', async () => {
         await this.salvar();
