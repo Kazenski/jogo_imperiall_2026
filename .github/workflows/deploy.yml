@@ -35,20 +35,24 @@ jobs:
       - name: Instalar dependencias
         run: npm ci
 
-      - name: Limpar cache do Vite
-        run: rm -rf node_modules/.vite
+      # ATENCAO: os passos de debug que estavam aqui ("Show git commit",
+      # "Show git status", "head -50 src/core/progresso.js" e um `grep`)
+      # quebraram o arquivo YAML e derrubaram o deploy. Ver CHANGELOG_TECNICO.
+      #
+      # O culpado era:
+      #     run: grep -n "caixa: box.caixa\|setDepth(1000)" src/ui/comuns.js
+      # Em YAML, um escalar sem aspas NAO pode conter ": " (dois-pontos +
+      # espaco). O parser lia `run: grep -n "caixa` como chave e o resto
+      # como valor de um mapeamento aninhado, e o workflow inteiro deixava de
+      # ser valido. O GitHub rejeitava o arquivo ANTES de criar qualquer job:
+      # a run aparecia como "failure" com ZERO jobs em menos de 1 segundo.
+      #
+      # Se for adicionar debug, use um bloco `run: |` com aspas ou escapes:
+      #     run: |
+      #       grep -n "foo: bar" src/ui/comuns.js
 
-      - name: Show git commit
-        run: git log -1 --oneline
-
-      - name: Show git status
-        run: git status
-
-      - name: Show progresso.js content
-        run: head -50 src/core/progresso.js
-
-      - name: Show comuns.js key parts
-        run: grep -n "caixa: box.caixa\|setDepth(1000)" src/ui/comuns.js
+      - name: Testes
+        run: npm test
 
       - name: Build
         # Vite le VITE_* do ambiente em tempo de build.
