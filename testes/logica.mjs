@@ -537,7 +537,7 @@ console.log('\n== chamadas para funções inexistentes (cenas e ui) ==');
     'console', 'Math', 'JSON', 'Object', 'Array', 'Number', 'String', 'Boolean',
     'Date', 'Map', 'Set', 'Promise', 'Symbol', 'RegExp', 'Error', 'isNaN', 'isFinite',
     'parseInt', 'parseFloat', 'decodeURIComponent', 'encodeURIComponent',
-    'Infinity', 'NaN', 'undefined', 'Phaser', 'Uint8Array', 'Blob', 'File',
+    'Infinity', 'NaN', 'undefined', 'Phaser', 'Uint8Array', 'Uint8ClampedArray', 'ImageData', 'Blob', 'File',
     'FileReader', 'Image', 'URL', 'URLSearchParams', 'TextDecoder', 'TextEncoder',
     'Intl', 'WeakMap', 'Proxy', 'Reflect', 'BigInt', 'globalThis', 'createImageBitmap',
     'firebase', 'document', 'window', 'localStorage', 'navigator', 'history', 'location',

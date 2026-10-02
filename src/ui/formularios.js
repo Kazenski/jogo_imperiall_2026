@@ -193,6 +193,8 @@ export function criarCampo(scene, opcoes) {
         return campoMultiselec(scene, container, { x: 0, y: yCaixa, largura, valor, opcoes: listaOpcoes, aoMudar, chave });
       case 'imagem':
         return campoImagem(scene, container, { x: 0, y: yCaixa, largura, valor, pastaUpload, aoMudar, chave });
+      case 'pixelart':
+        return campoPixelArt(scene, container, { x: 0, y: yCaixa, largura, valor, aoMudar, chave, tamanho: opcoes.tamanho ?? 32 });
       default:
         return campoDigitacao(scene, container, { x: 0, y: yCaixa, largura, altura: alturaCaixa, valor, tipo, placeholder, multilinha, aoMudar, chave });
     }
@@ -794,4 +796,185 @@ function hash(texto) {
     h = (Math.imul(31, h) + s.charCodeAt(i)) | 0;
   }
   return h;
+}
+
+// =====================================================================
+// Editor de Pixel Art (admin) — canvas 32x32 com zoom, paleta, ferramentas
+// =====================================================================
+
+/**
+ * Editor de pixel art embutido no formulário do admin.
+ * - Canvas 32x32 (ou 16x16) com zoom (1x a 16x)
+ * - Paleta de 16 cores + color picker customizado
+ * - Ferramentas: pincel, balde (flood fill), conta-gotas, borracha, limpar
+ * - Camada única, fundo transparente opcional
+ * - Exporta data URL (PNG base64) → sobe pro Storage
+ * - Preview em tempo real (imagem 1:1 ao lado)
+ *
+ * O valor armazenado é a data URL (base64 PNG). Se vazio, string vazia.
+ */
+function campoPixelArt(scene, container, cfg) {
+  const { x, y, largura, valor, aoMudar, chave = null, tamanho = 32 } = cfg;
+  const TAM = Math.max(16, Math.min(64, tamanho)); // 16, 32 ou 64
+  const ZOOM_MIN = 1, ZOOM_MAX = 16;
+  let zoom = 8;
+  let corAtual = '#000000';
+  let ferramenta = 'pincel'; // 'pincel' | 'balde' | 'conta-gotas' | 'borracha'
+  let mousePressionado = false;
+
+  // Paleta padrão (16 cores estilo pixel art)
+  const PALETA_PADRAO = [
+    '#000000', '#1d2b53', '#7e2553', '#008751',
+    '#ab5236', '#5f574f', '#c2c3c7', '#fff1e8',
+    '#ff004d', '#ffa300', '#ffec27', '#00e436',
+    '#29adff', '#83769c', '#ff77a8', '#ffccaa',
+  ];
+
+  // Estado do canvas (array 1D: RGBA por pixel)
+  const totalPixels = TAM * TAM;
+  const pixels = new Uint8ClampedArray(totalPixels * 4); // RGBA
+
+  // Carrega valor inicial se for data URL
+  if (valor && typeof valor === 'string' && valor.startsWith('data:image')) {
+    const img = new Image();
+    img.onload = () => {
+      const tempCanvas = document.createElement('canvas');
+      tempCanvas.width = TAM; tempCanvas.height = TAM;
+      const ctx = tempCanvas.getContext('2d');
+      ctx.drawImage(img, 0, 0, TAM, TAM);
+      const data = ctx.getImageData(0, 0, TAM, TAM);
+      pixels.set(data.data);
+      redesenharCanvas();
+    };
+    img.src = valor;
+  }
+
+  // Container Phaser para o editor
+  const editorContainer = scene.add.container(x, y);
+
+  // Canvas do editor (offscreen para lógica, onscreen para display)
+  const canvasEditor = document.createElement('canvas');
+  canvasEditor.width = TAM; canvasEditor.height = TAM;
+  canvasEditor.style.imageRendering = 'pixelated';
+  const ctxEditor = canvasEditor.getContext('2d');
+
+  // Canvas de preview 1:1 (mostra tamanho real)
+  const canvasPreview = document.createElement('canvas');
+  canvasPreview.width = TAM; canvasPreview.height = TAM;
+  canvasPreview.style.imageRendering = 'pixelated';
+  canvasPreview.style.border = '1px solid #4a3a28';
+  const ctxPreview = canvasPreview.getContext('2d');
+
+  // Canvas zoomado (o que o usuário vê e clica)
+  const canvasZoom = document.createElement('canvas');
+  canvasZoom.width = TAM * zoom; canvasZoom.height = TAM * zoom;
+  canvasZoom.style.imageRendering = 'pixelated';
+  canvasZoom.style.border = '2px solid #4a3a28';
+  canvasZoom.style.background = '#0f0b07';
+  canvasZoom.style.cursor = 'crosshair';
+  const ctxZoom = canvasZoom.getContext('2d');
+
+  // DOM elements para UI
+  const uiDiv = document.createElement('div');
+  uiDiv.style.cssText = 'position: absolute; display: flex; flex-direction: column; gap: 8px; font-family: system-ui, sans-serif; font-size: 11px; color: #e8dcc8;';
+
+  // Paleta de cores
+  const paletaDiv = document.createElement('div');
+  paletaDiv.style.cssText = 'display: flex; flex-wrap: wrap; gap: 2px;';
+  PALETA_PADRAO.forEach(cor => {
+    const btn = document.createElement('button');
+    btn.style.cssText = 'width: 20px; height: 20px; border: 2px solid #3a2c20; background: ' + cor + '; cursor: pointer; border-radius: 2px;';
+    if (cor === corAtual) btn.style.boxShadow = '0 0 0 2px #d4af6a';
+    btn.onclick = () => { corAtual = cor; ferramenta = 'pincel'; atualizarPaletaUI(); };
+    paletaDiv.appendChild(btn);
+  });
+
+  // Color picker customizado
+  const colorPicker = document.createElement('input');
+  colorPicker.type = 'color'; colorPicker.value = corAtual;
+  colorPicker.style.cssText = 'width: 44px; height: 24px; border: none; cursor: pointer;';
+  colorPicker.onchange = (e) => { corAtual = e.target.value; ferramenta = 'pincel'; atualizarPaletaUI(); };
+
+  // Seletor de ferramenta
+  const ferramentasDiv = document.createElement('div');
+  ferramentasDiv.style.cssText = 'display: flex; gap: 4px; flex-wrap: wrap;';
+  const ferramentas = [
+    { id: 'pincel', label: 'Pincel', titulo: 'Desenha pixel a pixel (B)' },
+    { id: 'balde', label: 'Balde', titulo: 'Preenche área contígua (G)' },
+    { id: 'conta-gotas', label: 'Conta-gotas', titulo: 'Copiar cor do pixel (Alt+clique)' },
+    { id: 'borracha', label: 'Borracha', titulo: 'Apaga para transparente (E)' },
+    { id: 'limpar', label: 'Limpar', titulo: 'Limpa todo o canvas (Ctrl+L)' },
+  ];
+  const botoesFerramenta = {};
+  ferramentas.forEach(f => {
+    const btn = document.createElement('button');
+    btn.textContent = f.label; btn.title = f.titulo;
+    btn.style.cssText = 'padding: 4px 8px; border: 2px solid #3a2c20; background: #1a1410; color: #e8dcc8; cursor: pointer; border-radius: 4px; font-size: 10px;';
+    if (f.id === ferramenta) btn.style.boxShadow = '0 0 0 2px #d4af6a';
+    btn.onclick = () => { if (f.id === 'limpar') { limparCanvas(); } else { ferramenta = f.id; atualizarFerramentasUI(); } };
+    botoesFerramenta[f.id] = btn; ferramentasDiv.appendChild(btn);
+  });
+
+  // Controles de zoom
+  const zoomDiv = document.createElement('div'); zoomDiv.style.cssText = 'display: flex; align-items: center; gap: 8px;';
+  const zoomLabel = document.createElement('span'); zoomLabel.textContent = 'Zoom: ' + zoom + 'x';
+  const zoomIn = document.createElement('button'); zoomIn.textContent = '+'; zoomIn.onclick = () => { if (zoom < ZOOM_MAX) { zoom++; atualizarZoom(); } };
+  const zoomOut = document.createElement('button'); zoomOut.textContent = '-'; zoomOut.onclick = () => { if (zoom > ZOOM_MIN) { zoom--; atualizarZoom(); } };
+  zoomDiv.append(zoomLabel, zoomOut, zoomIn);
+
+  // Checkbox fundo transparente
+  const transparenteDiv = document.createElement('label');
+  transparenteDiv.style.cssText = 'display: flex; align-items: center; gap: 6px; cursor: pointer;';
+  const chkTransparente = document.createElement('input'); chkTransparente.type = 'checkbox'; chkTransparente.checked = true;
+  chkTransparente.onchange = () => { redesenharCanvas(); };
+  transparenteDiv.append(chkTransparente, document.createTextNode('Fundo transparente'));
+
+  // Botão exportar/limpar
+  const acoesDiv = document.createElement('div'); acoesDiv.style.cssText = 'display: flex; gap: 8px; margin-top: 4px;';
+  const btnExportar = document.createElement('button'); btnExportar.textContent = 'Exportar PNG'; btnExportar.style.cssText = 'padding: 4px 10px; background: #8a6a2f; color: #14100c; border: none; border-radius: 4px; cursor: pointer;'; btnExportar.onclick = exportarPNG;
+  const btnLimpar = document.createElement('button'); btnLimpar.textContent = 'Limpar Tudo'; btnLimpar.style.cssText = 'padding: 4px 10px; background: #7a2f2a; color: #ffe6e0; border: none; border-radius: 4px; cursor: pointer;'; btnLimpar.onclick = limparCanvas;
+  acoesDiv.append(btnExportar, btnLimpar);
+
+  // Monta UI
+  uiDiv.append(document.createTextNode('Paleta:'), paletaDiv, document.createTextNode('Cor customizada:'), colorPicker, document.createTextNode('Ferramentas:'), ferramentasDiv, zoomDiv, transparenteDiv, acoesDiv, document.createTextNode('Preview 1:1:'), canvasPreview);
+
+  // Posiciona UI no DOM
+  const canvas = scene.game.canvas; const pai = canvas.parentElement;
+  const posicionarUI = () => { if (!pai) return; const c = canvas.getBoundingClientRect(); const p = pai.getBoundingClientRect(); uiDiv.style.left = (c.left - p.left + x + largura + 16) + 'px'; uiDiv.style.top = (c.top - p.top + y) + 'px'; uiDiv.style.zIndex = '30'; };
+  posicionarUI(); scene.scale.on(Phaser.Scale.RESIZE, posicionarUI); pai.appendChild(uiDiv);
+
+  // Adiciona canvas zoomado ao Phaser como texture dinâmica
+  const chaveTextura = 'pixelart_' + Date.now() + '_' + Math.random().toString(36).slice(2,6);
+  scene.textures.addCanvas(chaveTextura, canvasZoom);
+  const spriteZoom = scene.add.image(x, y, chaveTextura).setOrigin(0, 0);
+  container.add(spriteZoom);
+
+  function atualizarTexturaPhaser() { if (scene.textures.exists(chaveTextura)) { scene.textures.remove(chaveTextura); } scene.textures.addCanvas(chaveTextura, canvasZoom); spriteZoom.setTexture(chaveTextura); }
+  function atualizarZoom() { canvasZoom.width = TAM * zoom; canvasZoom.height = TAM * zoom; canvasZoom.style.width = (TAM * zoom) + 'px'; canvasZoom.style.height = (TAM * zoom) + 'px'; zoomLabel.textContent = 'Zoom: ' + zoom + 'x'; redesenharZoom(); atualizarTexturaPhaser(); }
+  function atualizarPaletaUI() { paletaDiv.querySelectorAll('button').forEach(btn => { const cor = btn.style.backgroundColor; btn.style.boxShadow = cor === corAtual ? '0 0 0 2px #d4af6a' : 'none'; }); Object.values(botoesFerramenta).forEach(btn => btn.style.boxShadow = 'none'); const btnFerramenta = botoesFerramenta[ferramenta]; if (btnFerramenta) btnFerramenta.style.boxShadow = '0 0 0 2px #d4af6a'; }
+  function atualizarFerramentasUI() { atualizarPaletaUI(); }
+  function hexParaRgba(hex) { const h = hex.replace('#', ''); const r = parseInt(h.slice(0,2),16); const g = parseInt(h.slice(2,4),16); const b = parseInt(h.slice(4,6),16); return [r,g,b,255]; }
+  function pegarCorPixel(px, py) { const idx = (py * TAM + px) * 4; const a = pixels[idx+3]; if (a === 0) return null; const r = pixels[idx], g = pixels[idx+1], b = pixels[idx+2]; return '#' + [r,g,b].map(v => v.toString(16).padStart(2,'0')).join(''); }
+  function setPixel(px, py, rgba) { if (px < 0 || px >= TAM || py < 0 || py >= TAM) return; const idx = (py * TAM + px) * 4; pixels[idx]=rgba[0]; pixels[idx+1]=rgba[1]; pixels[idx+2]=rgba[2]; pixels[idx+3]=rgba[3]; }
+  function floodFill(startX, startY, corNova) { const corAlvo = pegarCorPixel(startX, startY); const novaRgba = hexParaRgba(corNova); if (corAlvo === corNova) return; const visitados = new Set(); const fila = [[startX, startY]]; const alvoHex = corAlvo; while (fila.length) { const [x,y] = fila.pop(); const key = x + ',' + y; if (visitados.has(key)) continue; visitados.add(key); const atual = pegarCorPixel(x,y); if (atual !== alvoHex) continue; setPixel(x,y,novaRgba); if (x>0) fila.push([x-1,y]); if (x<TAM-1) fila.push([x+1,y]); if (y>0) fila.push([x,y-1]); if (y<TAM-1) fila.push([x,y+1]); } redesenharTudo(); }
+  function limparCanvas() { pixels.fill(0); redesenharTudo(); aoMudar?.(''); }
+  function exportarPNG() { const exportCanvas = document.createElement('canvas'); exportCanvas.width = TAM; exportCanvas.height = TAM; const ctx = exportCanvas.getContext('2d'); const imgData = new ImageData(pixels, TAM, TAM); ctx.putImageData(imgData, 0, 0); const dataUrl = exportCanvas.toDataURL('image/png'); ctxPreview.putImageData(imgData, 0, 0); aoMudar?.(dataUrl); }
+  function redesenharCanvas() { ctxEditor.clearRect(0,0,TAM,TAM); if (!chkTransparente.checked) { ctxEditor.fillStyle = '#1a1410'; ctxEditor.fillRect(0,0,TAM,TAM); } ctxEditor.putImageData(new ImageData(pixels.slice(), TAM, TAM), 0, 0); redesenharZoom(); redesenharPreview(); }
+  function redesenharZoom() { ctxZoom.clearRect(0,0,canvasZoom.width,canvasZoom.height); ctxZoom.fillStyle = '#0f0b07'; ctxZoom.fillRect(0,0,canvasZoom.width,canvasZoom.height); ctxZoom.strokeStyle = '#2a2018'; ctxZoom.lineWidth = 1; for (let i=0;i<=TAM;i++) { const pos = i * zoom; ctxZoom.beginPath(); ctxZoom.moveTo(pos,0); ctxZoom.lineTo(pos,TAM*zoom); ctxZoom.moveTo(0,pos); ctxZoom.lineTo(TAM*zoom,pos); ctxZoom.stroke(); } ctxZoom.drawImage(canvasEditor, 0, 0, TAM*zoom, TAM*zoom); atualizarTexturaPhaser(); }
+  function redesenharPreview() { ctxPreview.clearRect(0,0,TAM,TAM); if (!chkTransparente.checked) { ctxPreview.fillStyle = '#1a1410'; ctxPreview.fillRect(0,0,TAM,TAM); } ctxPreview.putImageData(new ImageData(pixels.slice(), TAM, TAM), 0, 0); }
+  function redesenharTudo() { redesenharCanvas(); atualizarTexturaPhaser(); }
+  function getCanvasPos(e) { const rect = canvasZoom.getBoundingClientRect(); const scaleX = canvasZoom.width / rect.width; const scaleY = canvasZoom.height / rect.height; const x = Math.floor((e.clientX - rect.left) * scaleX / zoom); const y = Math.floor((e.clientY - rect.top) * scaleY / zoom); return { x: Math.max(0, Math.min(TAM-1, x)), y: Math.max(0, Math.min(TAM-1, y)) }; }
+  canvasZoom.addEventListener('mousedown', (e) => { e.preventDefault(); const {x,y} = getCanvasPos(e); if (e.altKey || e.button === 2) { const cor = pegarCorPixel(x,y); if (cor) { corAtual = cor; colorPicker.value = corAtual; ferramenta = 'pincel'; atualizarPaletaUI(); } return; } mousePressionado = true; aplicarFerramenta(x,y); });
+  canvasZoom.addEventListener('mousemove', (e) => { if (!mousePressionado) return; const {x,y} = getCanvasPos(e); aplicarFerramenta(x,y); });
+  window.addEventListener('mouseup', () => { mousePressionado = false; });
+  canvasZoom.addEventListener('contextmenu', (e) => e.preventDefault());
+  function aplicarFerramenta(px, py) { const rgba = hexParaRgba(corAtual); switch (ferramenta) { case 'pincel': setPixel(px,py,rgba); break; case 'borracha': setPixel(px,py,[0,0,0,0]); break; case 'balde': floodFill(px,py,corAtual); return; } redesenharTudo(); }
+  const atalhos = { b: () => { ferramenta = 'pincel'; atualizarFerramentasUI(); }, g: () => { ferramenta = 'balde'; atualizarFerramentasUI(); }, e: () => { ferramenta = 'borracha'; atualizarFerramentasUI(); } };
+  const keydownHandler = (e) => { if (e.target.tagName === 'INPUT' || e.target.tagName === 'BUTTON') return; if (atalhos[e.key.toLowerCase()]) atalhos[e.key.toLowerCase()](); if (e.key.toLowerCase() === 'l' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); limparCanvas(); } };
+  window.addEventListener('keydown', keydownHandler);
+  redesenharCanvas();
+  const cleanup = () => { window.removeEventListener('keydown', keydownHandler); scene.scale.off(Phaser.Scale.RESIZE, posicionarUI); uiDiv.remove(); if (scene.textures.exists(chaveTextura)) scene.textures.remove(chaveTextura); };
+  const marcarFoco = () => { scene._foco = { chave, inicio: 0, fim: 0 }; };
+  canvasZoom.addEventListener('click', marcarFoco);
+  return { container: editorContainer, altura: Math.max(TAM * zoom + 20, 400), largura: largura, tipo: 'pixelart', chave, obter: () => { const exportCanvas = document.createElement('canvas'); exportCanvas.width = TAM; exportCanvas.height = TAM; const ctx = exportCanvas.getContext('2d'); if (!chkTransparente.checked) { ctx.fillStyle = '#1a1410'; ctx.fillRect(0,0,TAM,TAM); } ctx.putImageData(new ImageData(pixels.slice(), TAM, TAM), 0, 0); return exportCanvas.toDataURL('image/png'); }, definir(v) { if (!v || !v.startsWith('data:image')) return; const img = new Image(); img.onload = () => { const tempCanvas = document.createElement('canvas'); tempCanvas.width = TAM; tempCanvas.height = TAM; const ctx = tempCanvas.getContext('2d'); ctx.drawImage(img, 0, 0, TAM, TAM); const data = ctx.getImageData(0, 0, TAM, TAM); pixels.set(data.data); redesenharTudo(); }; img.src = v; }, chave, focar: () => { marcarFoco(); }, restaurarFoco() { marcarFoco(); return true; }, destruir: cleanup };
 }
