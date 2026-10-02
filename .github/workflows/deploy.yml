@@ -44,6 +44,9 @@ jobs:
       - name: Show progresso.js content
         run: head -50 src/core/progresso.js
 
+      - name: Show comuns.js key parts
+        run: grep -n "caixa: box.caixa\|setDepth(1000)" src/ui/comuns.js
+
       - name: Build
         # Vite le VITE_* do ambiente em tempo de build.
         # Sao as mesmas variaveis do .env.local. Se nao existirem no repo,
