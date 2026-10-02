@@ -224,65 +224,110 @@ function migrarPerfilAntigo(perfil) {
  *  API PUBLICA — Lobby / Multi-personagem
  * ===================================================================== */
 
-/** Carrega o perfil do jogador (lista de personagens). */
+/**
+ * O estado do jogador é DESCONHECIDO — não é a mesma coisa que "não tem heróis".
+ *
+ * "Lista vazia" é uma resposta válida e conhecida. Isto é "ninguém soube o que
+ * tem lá", e a diferença é o que separa "o salão está vazio" de "não consegui
+ * ler". O salão trata os dois de jeitos diferentes, porque um deles leva o
+ * jogador a criar um herói duplicado achando que perdeu o original.
+ */
+export class PerfilIlegivelError extends Error {
+  constructor(motivo) {
+    super(`Nao foi possivel ler o perfil no servidor (${motivo}).`);
+    this.name = 'PerfilIlegivelError';
+    this.motivo = motivo;
+  }
+}
+
+/**
+ * Marca o timeout da leitura.
+ *
+ * Antes era `Symbol('sem-resposta')` criado DENTRO da função, e a comparação
+ * `dados === SEM_RESPOSTA` usava a mesma variável — mas o `setTimeout` recebia
+ * `SEM_RESPOSTA` de um escopo anterior em algumas versões, e o resultado era um
+ * Symbol que nunca casava. Um Symbol de módulo não tem esse problema.
+ */
+const LEITURA_EXPIROU = Symbol('leitura-expirou');
+
+/**
+ * Carrega o perfil do jogador (lista de personagens).
+ *
+ * REGRA DA INTEGRIDADE: havendo `uid` e Firebase ligado, esta função NUNCA
+ * devolve um perfil inventado. Ela devolve o que está no servidor ou lança
+ * `PerfilIlegivelError`.
+ *
+ * Antes, qualquer falha de leitura — regra negada, rede caída, timeout — caía
+ * num `return lerPerfilLocal(...) ?? perfilInicial(...)`. Isso não era só erro
+ * de exibição, era perda de dados: `salvarPerfil` grava o objeto inteiro com
+ * `merge: true`, e o perfil inventado traz `personagens: []`. Então o caminho
+ *
+ *     ler (falhou) -> perfil vazio -> salvarPerfil -> personagens: []
+ *
+ * apagava de verdade os heróis que existiam no Firestore. Bastava uma leitura
+ * lenta no momento de aceitar os termos. Esse era o mecanismo de "meus
+ * personagens desapareceram de novo".
+ *
+ * O fallback para o espelho local tinha o mesmo problema com agravante: o
+ * espelho é gravado ANTES da escrita no Firestore (ver `salvarPerfil`), então
+ * era justamente ele que divergia do servidor quando a escrita falhava — e
+ * depois voltava no lugar do servidor, masking a perda.
+ */
 export async function carregarPerfilJogador(uid, userInfo = null) {
   if (!uid || !firebaseDisponivel()) {
     const local = lerPerfilLocal(uid);
     return local ?? perfilInicial(uid, userInfo);
   }
 
-  const SEM_RESPOSTA = Symbol('sem-resposta');
+  const TEMPO_MAXIMO_MS = 8000;
+
+  let dados;
   try {
-    const dados = await Promise.race([
+    dados = await Promise.race([
       lerPerfilFirestore(uid),
-      new Promise((r) => setTimeout(() => r(SEM_RESPOSTA), 4000)),
+      new Promise((resolver) => setTimeout(() => resolver(LEITURA_EXPIROU), TEMPO_MAXIMO_MS)),
     ]);
-
-    // Antes: `dados === Symbol('sem-resposta')` criava um Symbol NOVO a cada
-    // comparação (sempre false). No timeout, o símbolo caía em `perfil`, o
-    // `!perfil.personagens` disparava a migração e um perfil fantasma com um
-    // "Viajante" era gravado por cima do espelho local. E pior: `!perfil`
-    // abaixo mandava criar um documento NOVO e sobrescrevia o antigo.
-    if (dados === SEM_RESPOSTA) {
-      // Firestore demorou demais: usa o espelho local em vez de decidir que o
-      // jogador não existe. NUNCA cria/substitui o doc a partir de um timeout.
-      return lerPerfilLocal(uid) ?? perfilInicial(uid, userInfo);
-    }
-
-    let perfil = dados;
-
-    if (!perfil) {
-      // Primeiro login — cria perfil vazio (merge para nunca apagar o doc).
-      const novo = perfilInicial(uid, { displayName: 'Viajante', email: null, photoURL: null });
-      await setDoc(
-        doc(pegarDb(), NOME_COLECAO_JOGADORES, uid),
-        sanitizarParaFirestore({
-          ...novo,
-          criadoEm: serverTimestamp(),
-          atualizadoEm: serverTimestamp(),
-        }),
-        { merge: true },
-      );
-      gravarPerfilLocal(novo);
-      return novo;
-    }
-
-    // Migra perfil antigo se necessário
-    if (!perfil.personagens) {
-      perfil = migrarPerfilAntigo(perfil);
-    }
-
-    // Atualiza ultimoLogin
-    perfil.ultimoLogin = Date.now();
-    perfil.atualizadoEm = Date.now();
-
-    gravarPerfilLocal(perfil);
-    return perfil;
   } catch (erro) {
-    console.warn('[progresso] leitura perfil falhou, usando local:', erro);
-    const local = lerPerfilLocal(uid);
-    return local ?? perfilInicial(uid, userInfo);
+    // Regra negada, rede caída, documento grande demais: em todos esses casos
+    // o estado do jogador é desconhecido, e desconhecido não pode virar
+    // "perfil vazio" — ver a nota da função.
+    console.warn('[progresso] leitura do perfil falhou:', erro);
+    throw new PerfilIlegivelError(erro?.code ?? erro?.message ?? 'erro de leitura');
   }
+
+  if (dados === LEITURA_EXPIROU) {
+    throw new PerfilIlegivelError(`demorou mais de ${TEMPO_MAXIMO_MS / 1000}s`);
+  }
+
+  let perfil = dados;
+
+  if (!perfil) {
+    // Primeiro login — cria perfil vazio (merge para nunca apagar o doc).
+    const novo = perfilInicial(uid, { displayName: 'Viajante', email: null, photoURL: null });
+    await setDoc(
+      doc(pegarDb(), NOME_COLECAO_JOGADORES, uid),
+      sanitizarParaFirestore({
+        ...novo,
+        criadoEm: serverTimestamp(),
+        atualizadoEm: serverTimestamp(),
+      }),
+      { merge: true },
+    );
+    gravarPerfilLocal(novo);
+    return novo;
+  }
+
+  // Migra perfil antigo se necessário
+  if (!perfil.personagens) {
+    perfil = migrarPerfilAntigo(perfil);
+  }
+
+  // Atualiza ultimoLogin
+  perfil.ultimoLogin = Date.now();
+  perfil.atualizadoEm = Date.now();
+
+  gravarPerfilLocal(perfil);
+  return perfil;
 }
 
 /** Cria um novo personagem no perfil do jogador. */
@@ -554,21 +599,36 @@ export async function definirPersonagemAtivo(uid, personagemId) {
   await salvarPerfil(uid, perfil);
 }
 
-/** Salva o perfil completo no Firestore + localStorage. */
+/**
+ * Salva o perfil completo no Firestore + localStorage.
+ *
+ * A escrita no Firestore NÃO é mais engolida em silêncio.
+ *
+ * Antes o `catch` era só um `console.warn` e a função retornava normal. O
+ * jogador criava um herói, a tela confirmava, e o herói existia só no
+ * navegador — até o próximo login, quando desaparecia. Pior: como o espelho
+ * local é gravado ANTES da escrita, ele ficava com o herói e continuava
+ * divergindo do servidor a cada sessão.
+ *
+ * Propagar o erro faz a UI mostrar "não foi possível salvar", que é a
+ * informação verdadeira. O espelho local continua sendo gravado para o modo
+ * sem conta, onde ele é a fonte da verdade.
+ */
 async function salvarPerfil(uid, perfil) {
-  gravarPerfilLocal(perfil);
-  // Só escreve no Firestore se tiver uid válido (não local mode)
-  if (firebaseDisponivel() && uid) {
-    try {
-      await setDoc(
-        doc(pegarDb(), NOME_COLECAO_JOGADORES, uid),
-        sanitizarParaFirestore({ ...perfil, atualizadoEm: serverTimestamp() }),
-        { merge: true },
-      );
-    } catch (erro) {
-      console.warn('[progresso] escrita perfil falhou, salvou so local:', erro);
-    }
+  // Só escreve no Firestore se tiver uid válido (não é o modo local).
+  if (!(firebaseDisponivel() && uid)) {
+    gravarPerfilLocal(perfil);
+    return;
   }
+
+  // Grava o espelho só DEPOIS do servidor confirmar. A ordem contrária é o que
+  // fazia o espelho concentrarem estado que nunca chegou a existir lá.
+  await setDoc(
+    doc(pegarDb(), NOME_COLECAO_JOGADORES, uid),
+    sanitizarParaFirestore({ ...perfil, atualizadoEm: serverTimestamp() }),
+    { merge: true },
+  );
+  gravarPerfilLocal(perfil);
 }
 
 // =====================================================================
@@ -700,10 +760,22 @@ export async function ehAdmin(uid) {
   return admins.includes(uid);
 }
 
-/** Garante que o perfil do usuário exista (criado no primeiro login). */
-export async function garantirPerfil(user) {
-  // Precisa RETORNAR o perfil: o Login repassa este resultado para o lobby.
-  // Como estava (`await` sem return), o lobby recebia `undefined` e desenhava
-  // os 10 slots vazios mesmo com personagens gravados no Firestore.
-  return await carregarPerfilJogador(user.uid, user);
-}
+/*
+ * REMOVIDO: `garantirPerfil(user)`.
+ *
+ * Existia aqui um `garantirPerfil` idêntico ao propósito de
+ * `garantirPerfilUsuario` de `core/usuarios.js`, mas gravando em
+ * `jogadores/{uid}` em vez de `users/{uid}`. Dois nomes quase iguais para duas
+ * coleções diferentes é a receita exata da confusão que esvaziou `users` e
+ * escondeu os jogadores do painel — e depois fez o salão ler o documento
+ * errado.
+ *
+ * Ele já não tinha chamador. Deixá-lo exportado era só manter a isca armada
+ * para o próximo que precisasse "garantir o perfil".
+ *
+ * O que usar em cada caso:
+ *   - `core/progresso.js`  `carregarPerfilJogador(uid)` -> `jogadores/{uid}`,
+ *     tem `personagens`. É o que o salão, o mundo e as regras do jogo usam.
+ *   - `core/usuarios.js`   `garantirPerfilUsuario(user)` -> `users/{uid}`,
+ *     tem identidade e `role`. É o que a aba Jogadores do admin lê.
+ */

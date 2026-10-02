@@ -428,6 +428,35 @@ export class LobbyScene extends Phaser.Scene {
     const origemX = x + Math.max(0, (w - larguraGrade) / 2);
     const origemY = y + Math.max(0, (h - alturaGrade) / 2);
 
+    // "Não tem herói" e "não consegui ler os heróis" são coisas diferentes, e
+    // aparecer iguais é o que faz o jogador criar um duplicado achando que
+    // perdeu o original.
+    //
+    // Com conta Google, `perfil === null` significa que a leitura de
+    // `jogadores/{uid}` falhou — os heróis continuam no Firestore. Dizer
+    // "Nenhum herói no salão ainda" ali é mentira, e o botão "+ NOVO HERÓI"
+    // fica parecendo a saída. Aqui o salão diz o que aconteceu e manda
+    // recarregar.
+    if (this.uid && !this.perfil) {
+      this.raiz.add(
+        uiTexto(
+          this,
+          x + w / 2,
+          y + h / 2 - 26,
+          'Não foi possível carregar seus heróis.\nSeus personagens continuam salvos — recarregue a página.',
+          { fontSize: '14px', color: OURO, align: 'center' },
+        )
+          .setOrigin(0.5, 0)
+          .setAlpha(0.9),
+      );
+      this.raiz.add(
+        botao(this, x + w / 2, y + h / 2 + 34, 'RECARREGAR', () => {
+          window.location.reload();
+        }, { largura: 160 }),
+      );
+      return;
+    }
+
     if (personagens.length === 0) {
       this.raiz.add(
         uiTexto(this, x + w / 2, y + h / 2 - 14, 'Nenhum herói no salão ainda.\nUse "+ NOVO HERÓI" para forjar o primeiro.', {

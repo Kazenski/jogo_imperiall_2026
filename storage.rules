@@ -20,15 +20,6 @@ service firebase.storage {
   match /b/{bucket}/o {
 
     // ------------------------------------------------------------------
-    //  Leitura — pública, sem exigir login.
-    //
-    //  Precisa ser anônima porque o preflight CORS (OPTIONS) não carrega o
-    //  token de autenticação. Se exigíssemos `request.auth != null`, o
-    //  navegador aborta antes mesmo de anexar o token.
-    // ------------------------------------------------------------------
-    allow read: if true;
-
-    // ------------------------------------------------------------------
     //  Escrita — só admin, checando a MESMA lista que o Firestore usa.
     //
     //  `firestore.get` lê Firestore de dentro de uma regra de Storage, então
@@ -64,7 +55,27 @@ service firebase.storage {
       return request.resource.contentType.matches('image/.*');
     }
 
+    // ------------------------------------------------------------------
+    //  Um match só, com leitura e escrita no MESMO caminho.
+    //
+    //  Isto não é estilo, é semântica. Um `match` aninhado NÃO herda as regras
+    //  do pai: ele SUBSTITUI as regras aplicáveis aos caminhos que casa. Com
+    //  `allow read: if true` aqui em cima e um `match /{allPaths=**}` com só
+    //  `allow write`, a leitura pública deixava de valer para todo arquivo —
+    //  e nenhuma imagem do jogo carregava mais.
+    //
+    //  Por isso as duas permissões vivem juntas, no mesmo match. Regras de
+    //  leitura e escrita não se somam em níveis diferentes: a do match mais
+    //  específico vence, e silêncio não é "permitido".
+    // ------------------------------------------------------------------
     match /{allPaths=**} {
+      // Leitura pública, sem exigir login.
+      //
+      // Precisa ser anônima porque o preflight CORS (OPTIONS) não carrega o
+      // token de autenticação. Se exigíssemos `request.auth != null`, o
+      // navegador aborta antes mesmo de anexar o token.
+      allow read: if true;
+
       allow write: if ehAdmin() && pastaDeUpload() && tamanhoOk() && imagemOk();
     }
   }

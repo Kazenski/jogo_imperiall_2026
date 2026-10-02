@@ -6,7 +6,7 @@ import {
   firebaseDisponivel,
   traduzirErro,
 } from '../core/firebase.js';
-import { carregarProgresso, salvarTermos } from '../core/progresso.js';
+import { carregarProgresso, carregarPerfilJogador, salvarTermos } from '../core/progresso.js';
 import { carregarCatalogo } from '../core/catalogo.js';
 import { temConsentimento } from '../core/apagamento.js';
 import { ACEITE_REQUERIDO } from '../dados/legal.js';
@@ -359,20 +359,55 @@ export class LoginScene extends Phaser.Scene {
       // nome na tela de criação, que é onde ele pertence.
       void nome;
 
-      // Garante o perfil em `users/{uid}` + verifica admin.
+      // DOIS PERFIS, DUAS COLEÇÕES. Não confundir (de novo).
       //
-      // É este passo que faz o jogador aparecer na aba Jogadores do painel.
-      // Sem ele, ele joga normal (o progresso vive em `jogadores`), mas para o
-      // admin ele simplesmente não existe.
-      let perfil = null;
+      //   `perfilUsuario` = `users/{uid}`    → identidade: nome, email, role.
+      //                                     É o que a aba Jogadores do admin lê.
+      //   `perfilJogador` = `jogadores/{uid}` → o SALÃO: a lista `personagens`.
+      //
+      // O bug: o lobby recebia `perfilUsuario` e lia `perfil.personagens`.
+      // O documento de `users` NÃO tem esse campo — tem `nivel`, `xp`, `base`,
+      // mas nada de personagens. Então a lista vinha vazia sempre, e o salão
+      // mostrava "0/10 heróis" mesmo com a conta cheia de heróis no Firestore.
+      // Pior: como `garantirPerfilUsuario` dá o nome, o cabeçalho ficava
+      // correto ("Eduardo Kazenski · 0/10 heróis") e nada indicava que a lista
+      // tinha sido lida do documento errado. Era a mesma classe de erro do
+      // `garantirPerfil` duplicado que esvaziava `users`.
+      //
+      // Por que não sumiu antes: o caminho dos TERMOS passa `salvarTermos()`,
+      // que devolve o perfil de `jogadores`. Quem ainda não aceitou os termos
+      // via o caminho certo; quem já aceitou (todo mundo, na segunda vez em
+      // diante) via o errado. Daí "apareceram de novo".
+      let perfilUsuario = null;
       let isAdminUser = false;
+      let perfilJogador = null;
+
+      // O perfil do jogador vem PRIMEIRO e em bloco separado.
+      //
+      // Se a escrita em `users` falhar, o salão tem que continuar mostrando os
+      // heróis. Um `try` único juntando as duas coisas faz o login inteiro
+      // cair no `catch`, e o jogador entra no jogo sem lista nenhuma — que é
+      // a aparência de "meus personagens sumiram", mesmo com tudo no Firestore.
       if (uid) {
         try {
-          perfil = await garantirPerfilUsuario(user);
+          perfilJogador = await carregarPerfilJogador(uid);
+        } catch (e) {
+          console.warn('[Login] nao foi possivel ler o salao:', e);
+        }
+        try {
+          perfilUsuario = await garantirPerfilUsuario(user);
           isAdminUser = await ehAdmin(uid);
         } catch (e) {
           console.warn('[Login] nao foi possivel garantir perfil:', e);
         }
+      } else {
+        // Modo local: o espelho do navegador é a única fonte, e o mesmo
+        // leitor devolve ela sem Firestore.
+        perfilJogador = await carregarPerfilJogador(null, {
+          displayName: nome,
+          email: null,
+          photoURL: null,
+        });
       }
 
       const contexto = {
@@ -381,7 +416,10 @@ export class LoginScene extends Phaser.Scene {
         email: user?.email ?? null,
         podeSair: Boolean(uid),
         progresso,
-        perfil,
+        // O salão lê `personagens` — este é o documento de `jogadores`.
+        perfil: perfilJogador,
+        // A identidade fica disponível separada, para quem precisar do `role`.
+        perfilUsuario,
         isAdmin: isAdminUser,
         catalogo,
       };
