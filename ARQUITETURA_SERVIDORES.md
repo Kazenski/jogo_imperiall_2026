@@ -319,7 +319,7 @@ jobs:
 | **5** | Multi-tenancy (escolas/empresas/cidades) + deploy automatizado | 1 semana | **Depois** |
 | **6** | Leaderboards globais, eventos sazonais, replay system | Contínuo | **Contínuo** |
 
----
+--- 
 
 ## Custos Estimados (Mensal)
 
