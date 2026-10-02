@@ -826,16 +826,22 @@ export class LobbyScene extends Phaser.Scene {
       bx += b.largura + vao;
     }
 
-    // A capa vai POR ÚLTIMO de propósito. Ela é o último da lista de input, e
-    // o que vier depois é o que roda. Se ela entrasse primeiro — como fazia o
-    // `confirmarApagar` antigo —, um clique em qualquer botão do modal
-    // destruiria o modal antes de o botão fazer o que foi pedido.
+    // A capa escurece e fecha o modal. Ela precisa ficar ATRÁS do painel:
+    // adicionada por último, ela tampar o painel (o popup ficava escuro) e
+    // engolia o clique dos botões (clicar em "Entrar no mundo" fechava o
+    // modal em vez de entrar).
     const capa = this.add
-      .rectangle(this.scale.width / 2, this.scale.height / 2, this.scale.width * 2, this.scale.height * 2, 0x000000, 0.85)
+      .rectangle(this.scale.width / 2, this.scale.height / 2, this.scale.width * 2, this.scale.height * 2, 0x000000, 0.55)
       .setOrigin(0.5)
       .setInteractive();
-    capa.on('pointerdown', () => this.fecharModal());
-    container.add(capa);
+    capa.on('pointerdown', (pointer) => {
+      // Clique DENTRO do painel não fecha: o clique do botão chega também
+      // aqui (o Phaser entrega o evento a todos os objetos sob o ponteiro).
+      const dentro =
+        pointer.x >= x0 && pointer.x <= x0 + w && pointer.y >= y0 && pointer.y <= y0 + h;
+      if (!dentro) this.fecharModal();
+    });
+    container.addAt(capa, 0);
   }
 
   /** Geometria padrão de um modal, já limitada à viewport. */
