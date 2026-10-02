@@ -44,8 +44,15 @@ export function perfilInicial(user) {
   };
 }
 
-/** Garante que o usuario exista em users/{uid}. Retorna o perfil. */
-export async function garantirPerfil(user) {
+/**
+ * Garante que o usuario exista em `users/{uid}`. Retorna o perfil.
+ *
+ * O nome distingue este do `garantirPerfil` de `core/progresso.js`, que grava
+ * em `jogadores/{uid}`. Os dois fazem parte do login, mas mexem em coleções
+ * diferentes — e importar o errado deixava `users` vazio, escondendo do
+ * painel todos os jogadores que entraram antes da correção.
+ */
+export async function garantirPerfilUsuario(user) {
   if (!user?.uid || !firebaseDisponivel()) {
     return perfilInicial(user);
   }

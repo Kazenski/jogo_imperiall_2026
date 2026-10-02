@@ -22,6 +22,8 @@ import {
   duplicarPersonagem,
   removerPersonagem,
   moverPersonagem,
+  listarJogadoresCompletos,
+  garantirPerfilAdmin,
 } from '../core/repos.js';
 import { ehAdmin } from '../core/usuarios.js';
 import { enviarImagem, pareceUrlDeImagem } from '../core/armazenamento.js';
@@ -1509,32 +1511,92 @@ export class AdminScene extends Phaser.Scene {
     });
   }
 
+  /**
+   * Jogadores: contas que existem em `users` OU em `jogadores`.
+   *
+   * Antes lia só `users`, e isso escondia quem entrou antes do perfil ser
+   * gravado no login. Os amigos do dono estavam em `jogadores` com personagem
+   * criado e simplesmente não apareciam. Agora a lista é a união das duas, e
+   * o botão "Criar perfil" conserta a conta sem esperar o jogador logar de novo.
+   */
   async renderizarJogadores(conteudo) {
     conteudo.innerHTML = '<div class="painel">Carregando…</div>';
-    const [usuarios, admins] = await Promise.all([
-      this.carregar('usuarios', () => repoUsuarios.listar()),
+    const [jogadores, admins] = await Promise.all([
+      this.carregar('usuarios', () => listarJogadoresCompletos()),
       this.carregar('admins', () => listarAdmins()),
     ]);
     if (!this.overlay) return;
+
+    const semPerfil = jogadores.filter((j) => !j.temPerfil);
+
     conteudo.innerHTML = `
       <div class="painel">
         <h3>Jogadores</h3>
-        <p style="font-size:12px;color:#7b8794">Promova a conta que gerencia o painel. A lista vem de users/{uid}.</p>
-        <table><thead><tr><th>Nome</th><th>Email</th><th>Nível</th><th>Role</th><th></th></tr></thead>
-        <tbody>${usuarios.map((u) => {
-          const ehAdm = admins.includes(u.id);
-          return `<tr><td>${u.nome ?? '—'}</td><td>${u.email ?? '—'}</td><td>${u.nivel ?? 1}</td>
-          <td>${ehAdm ? '👑 admin' : 'jogador'}</td>
-          <td><button class="btn-secundario" data-id="${u.id}" data-adm="${ehAdm ? 1 : 0}">${ehAdm ? 'Rebaixar' : 'Tornar admin'}</button></td></tr>`;
-        }).join('') || '<tr><td colspan="5">Nenhum usuário.</td></tr>'}</tbody></table>
+        <p style="font-size:12px;color:#7b8794;margin-bottom:10px">
+          ${jogadores.length} conta(s) encontrada(s).
+          A lista junta <code>users/{uid}</code> (perfil) com <code>jogadores/{uid}</code> (progresso).
+        </p>
+
+        ${semPerfil.length ? `
+          <div style="background:#fff8e6;border:1px solid #f0dca0;border-radius:8px;padding:12px;margin-bottom:14px">
+            <b style="color:#8a6a2f">${semPerfil.length} conta(s) jogam, mas não têm perfil</b>
+            <p style="font-size:11px;color:#7b8794;margin:4px 0 10px">
+              Entraram antes de o perfil ser criado no primeiro login. Eles jogam normalmente —
+              o progresso está salvo. Clique em "Criar perfil" para que passem a aparecer
+              completos aqui. Não precisam logar de novo.
+            </p>
+            <table><thead><tr><th>Nome provisório</th><th>Personagens</th><th>Nível</th><th></th></tr></thead>
+            <tbody>${semPerfil.map((j) => `
+              <tr>
+                <td>${escaparHtml(j.nome)}</td>
+                <td>${j.totalPersonagens}</td>
+                <td>${j.nivel}</td>
+                <td><button class="btn-secundario" data-criar="${escaparAttr(j.uid)}" style="padding:5px 10px;font-size:11px">Criar perfil</button></td>
+              </tr>`).join('')}</tbody></table>
+          </div>` : ''}
+
+        <div style="overflow:auto">
+        <table>
+          <thead><tr><th>Nome</th><th>Email</th><th>Nível</th><th>Heróis</th><th>Perfil</th><th>Role</th><th></th></tr></thead>
+          <tbody>${jogadores.map((u) => {
+            const ehAdm = admins.includes(u.uid);
+            return `<tr>
+              <td>${escaparHtml(u.nome)}</td>
+              <td>${escaparHtml(u.email ?? '—')}</td>
+              <td>${u.nivel}</td>
+              <td>${u.totalPersonagens}</td>
+              <td>${u.temPerfil ? '<span style="color:#2bb3a3">ok</span>' : '<span style="color:#c96a5a">criado pelo admin</span>'}</td>
+              <td>${ehAdm ? '👑 admin' : 'jogador'}</td>
+              <td><button class="btn-secundario" data-id="${escaparAttr(u.uid)}" data-adm="${ehAdm ? 1 : 0}">${ehAdm ? 'Rebaixar' : 'Tornar admin'}</button></td>
+            </tr>`;
+          }).join('') || '<tr><td colspan="7">Nenhuma conta encontrada.</td></tr>'}</tbody>
+        </table></div>
       </div>`;
+
+    conteudo.querySelectorAll('button[data-criar]').forEach((btn) => {
+      btn.addEventListener('click', async () => {
+        try {
+          const r = await garantirPerfilAdmin(btn.dataset.criar);
+          delete this.caches.usuarios;
+          this.status(r?.jaExistia ? 'Perfil já existia.' : 'Perfil criado.');
+          this.renderizarJogadores(conteudo);
+        } catch (erro) {
+          this.status('Erro ao criar perfil: ' + (erro?.message ?? erro), '#c96a5a');
+        }
+      });
+    });
+
     conteudo.querySelectorAll('button[data-id]').forEach((btn) => {
       btn.addEventListener('click', async () => {
         const ehAdm = btn.dataset.adm === '1';
-        await definirAdminUid(btn.dataset.id, !ehAdm);
-        delete this.caches.admins;
-        this.status(ehAdm ? 'Rebaixado.' : 'Promovido a admin.');
-        this.renderizarConteudo();
+        try {
+          await definirAdminUid(btn.dataset.id, !ehAdm);
+          delete this.caches.admins;
+          this.status(ehAdm ? 'Rebaixado.' : 'Promovido a admin.');
+          this.renderizarJogadores(conteudo);
+        } catch (erro) {
+          this.status('Erro ao alterar role: ' + (erro?.message ?? erro), '#c96a5a');
+        }
       });
     });
   }
@@ -1568,7 +1630,10 @@ export class AdminScene extends Phaser.Scene {
       : personagens;
 
     const nomeClasse = (id) => classes.find((c) => c.id === id)?.nome ?? id ?? 'sem classe';
-    const contaDe = (uid) => usuarios.find((u) => u.id === uid);
+    // `usuarios` aqui é a lista COMPLETA (users + jogadores), não só `users`.
+    // A aba Jogadores já carregou isso na cache, então não há leitura extra —
+    // e a conta de quem não tem perfil aparece mesmo assim.
+    const contaDe = (uid) => usuarios.find((u) => (u.uid ?? u.id) === uid);
 
     conteudo.innerHTML = `
       <div class="painel">
@@ -1782,7 +1847,7 @@ export class AdminScene extends Phaser.Scene {
         for (const p of todosPersonagens) contas.set(p.uid, (contas.get(p.uid) ?? 0) + 1);
         const origem = [...contas.keys()].map((uid) => {
           const c = contaDe(uid);
-          return { uid, nome: c?.nome ?? uid, total: contas.get(uid), email: c?.email };
+          return { uid, nome: c?.nome ?? `Conta ${String(uid).slice(0, 6)}`, total: contas.get(uid), email: c?.email };
         });
 
         sel.innerHTML = origem.map((c) => {

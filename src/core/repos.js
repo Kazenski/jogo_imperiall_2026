@@ -384,6 +384,111 @@ export async function moverPersonagem(uidDestino, personagem, uidOrigem) {
   return personagem;
 }
 
+/**
+ * Lista TODOS os jogadores, juntando as DUAS coleções.
+ *
+ * `users/{uid}` e `jogadores/{uid}` são coisas diferentes, e o painel precisa
+ * das duas:
+ *
+ *  - `users`      = perfil (nome do Google, email, role)
+ *  - `jogadores`  = progresso (personagens, inventário)
+ *
+ * Jogadores que entraram antes do perfil ser gravado no primeiro login
+ * existem SÓ em `jogadores`. Ler só `users` os torna invisíveis no painel —
+ * foi o que aconteceu com os três amigos do dono do projeto. Por isso a
+ * union: quem está em qualquer uma das duas aparece.
+ */
+export async function listarJogadoresCompletos() {
+  const db = pegarDb();
+  if (!db) return [];
+
+  const [snapUsers, snapJogadores] = await Promise.all([
+    getDocs(collection(db, 'users')).catch(() => ({ docs: [] })),
+    getDocs(collection(db, 'jogadores')).catch(() => ({ docs: [] })),
+  ]);
+
+  const mapa = new Map();
+
+  for (const d of snapUsers.docs) {
+    mapa.set(d.id, {
+      uid: d.id,
+      perfil: d.data() ?? {},
+      progresso: null,
+    });
+  }
+  for (const d of snapJogadores.docs) {
+    const existente = mapa.get(d.id);
+    if (existente) existente.progresso = d.data() ?? {};
+    else {
+      // Jogou, mas nunca gravou perfil: monta um provisório para o painel
+      // mostrar. NÃO é persistido aqui — só aparece na listagem.
+      mapa.set(d.id, { uid: d.id, perfil: {}, progresso: d.data() ?? {} });
+    }
+  }
+
+  const linhas = [...mapa.values()].map((linha) => {
+    const p = linha.perfil ?? {};
+    const prog = linha.progresso ?? {};
+    const personagens = Array.isArray(prog.personagens) ? prog.personagens : [];
+    const ativo = personagens.find((c) => c?.id === prog.personagemAtivoId) ?? personagens[0];
+
+    return {
+      uid: linha.uid,
+      nome: p.nome ?? prog.nome ?? 'Sem perfil',
+      email: p.email ?? prog.email ?? null,
+      role: p.role ?? 'jogador',
+      nivel: ativo?.nivel ?? p.nivel ?? 1,
+      ouro: ativo?.ouro ?? p.ouro ?? 0,
+      vocacaoId: ativo?.vocacaoId ?? p.vocacaoId ?? null,
+      totalPersonagens: personagens.length,
+      temPerfil: Boolean(p.nome),
+      temProgresso: personagens.length > 0,
+      ultimoLogin: prog.ultimoLogin ?? null,
+    };
+  });
+
+  return linhas.sort((a, b) => String(a.nome).localeCompare(String(b.nome), 'pt-BR'));
+}
+
+/**
+ * Cria (ou completa) o documento `users/{uid}` de quem já joga.
+ *
+ * Chamado pelo painel para consertar contas faltantes. O nome vem do documento
+ * de progresso quando existir; caso contrário, um nome derivado do `uid`, que
+ * é melhor do que deixar a conta invisível.
+ */
+export async function garantirPerfilAdmin(uid) {
+  const db = pegarDb();
+  if (!db || !uid) return null;
+
+  const refPerfil = doc(db, 'users', uid);
+  const snapPerfil = await getDoc(refPerfil);
+  if (snapPerfil.exists()) return { uid, ...snapPerfil.data(), jaExistia: true };
+
+  const snapProg = await getDoc(doc(db, 'jogadores', uid));
+  const prog = snapProg.exists() ? snapProg.data() : {};
+  const personagens = Array.isArray(prog.personagens) ? prog.personagens : [];
+  const ativo = personagens.find((c) => c?.id === prog.personagemAtivoId) ?? personagens[0];
+
+  const novo = {
+    uid,
+    nome: prog.nome ?? `Viajante ${String(uid).slice(0, 6)}`,
+    email: prog.email ?? null,
+    role: 'jogador',
+    // Derivado do personagem ativo, para a listagem ter o que mostrar.
+    nivel: ativo?.nivel ?? 1,
+    ouro: ativo?.ouro ?? 0,
+    vocacaoId: ativo?.vocacaoId ?? null,
+    // Marca que o perfil foi criado pelo admin, e não no primeiro login.
+    perfilCriadoPeloAdmin: true,
+    criadoEm: serverTimestamp(),
+    atualizadoEm: serverTimestamp(),
+  };
+
+  await setDoc(refPerfil, novo, { merge: false });
+  return { ...novo, jaExistia: false };
+}
+
 /** Uids marcados como administrador (system/admins). */
 export async function listarAdmins() {
   const docRef = obterDoc('system', 'admins');

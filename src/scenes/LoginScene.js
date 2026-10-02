@@ -11,8 +11,15 @@ import { carregarCatalogo } from '../core/catalogo.js';
 import { temConsentimento } from '../core/apagamento.js';
 import { ACEITE_REQUERIDO } from '../dados/legal.js';
 import { OURO, PERGAMINHO } from '../constants.js';
-import { garantirPerfil } from '../core/progresso.js';
-import { ehAdmin } from '../core/usuarios.js';
+// `garantirPerfilUsuario` vem de core/usuarios.js e grava em `users/{uid}`.
+//
+// CUIDADO: existe OUTRO `garantirPerfil` em core/progresso.js, que grava em
+// `jogadores/{uid}`. Importar o errado (o que acontecia) deixava `users`
+// permanentemente vazio, e a aba Jogadores do admin mostrava só o dono —
+// os amigos que jogavam existiam em `jogadores`, mas não em `users`, e
+// sumiam do painel. Por isso o nome foi trocado: agora não dá para importar
+// o errado sem perceber.
+import { garantirPerfilUsuario, ehAdmin } from '../core/usuarios.js';
 import { botao } from '../ui/comuns.js';
 
 export class LoginScene extends Phaser.Scene {
@@ -352,12 +359,16 @@ export class LoginScene extends Phaser.Scene {
       // nome na tela de criação, que é onde ele pertence.
       void nome;
 
-      // Garante perfil com role + verifica admin
+      // Garante o perfil em `users/{uid}` + verifica admin.
+      //
+      // É este passo que faz o jogador aparecer na aba Jogadores do painel.
+      // Sem ele, ele joga normal (o progresso vive em `jogadores`), mas para o
+      // admin ele simplesmente não existe.
       let perfil = null;
       let isAdminUser = false;
       if (uid) {
         try {
-          perfil = await garantirPerfil(user);
+          perfil = await garantirPerfilUsuario(user);
           isAdminUser = await ehAdmin(uid);
         } catch (e) {
           console.warn('[Login] nao foi possivel garantir perfil:', e);
