@@ -77,6 +77,16 @@ export function xpTotalParaNivel(nivel) {
 }
 
 /** Perfil inicial do jogador (conta Google). */
+/** Remove campos undefined (Firestore não aceita). */
+function sanitizarParaFirestore(obj) {
+  const limpo = {};
+  for (const [k, v] of Object.entries(obj)) {
+    limpo[k] = v === undefined ? null : v;
+  }
+  return limpo;
+}
+
+/** Perfil inicial do jogador (conta Google). */
 function perfilInicial(uid, userInfo) {
   return {
     uid,
@@ -225,11 +235,11 @@ export async function carregarPerfilJogador(uid, userInfo = null) {
     if (!perfil) {
       // Primeiro login — cria perfil vazio
       const novo = perfilInicial(uid, { displayName: 'Viajante', email: null, photoURL: null });
-      await setDoc(doc(pegarDb(), NOME_COLECAO_JOGADORES, uid), {
+      await setDoc(doc(pegarDb(), NOME_COLECAO_JOGADORES, uid), sanitizarParaFirestore({
         ...novo,
         criadoEm: serverTimestamp(),
         atualizadoEm: serverTimestamp(),
-      });
+      }));
       gravarPerfilLocal(novo);
       return novo;
     }
@@ -398,7 +408,7 @@ async function salvarPerfil(uid, perfil) {
     try {
       await setDoc(
         doc(pegarDb(), NOME_COLECAO_JOGADORES, uid),
-        { ...perfil, atualizadoEm: serverTimestamp() },
+        sanitizarParaFirestore({ ...perfil, atualizadoEm: serverTimestamp() }),
         { merge: true },
       );
     } catch (erro) {
@@ -464,7 +474,7 @@ export async function definirBaseVisivel(uid, visivel) {
     try {
       await setDoc(
         doc(pegarDb(), NOME_COLECAO_PORTAIS, uid),
-        {
+        sanitizarParaFirestore({
           uid,
           nomeBase: char.base?.nome ?? 'Acampamento Imperial',
           nivelBase: char.base?.nivel ?? 1,
@@ -473,7 +483,7 @@ export async function definirBaseVisivel(uid, visivel) {
           nivelJogador: char.nivel ?? 1,
           nomeJogador: char.nome,
           atualizadoEm: serverTimestamp(),
-        },
+        }),
         { merge: true },
       );
     } catch (erro) {
@@ -522,7 +532,7 @@ export async function definirAdminUid(uid, isAdmin) {
     const snap = await getDoc(adminsRef);
     const uids = snap.exists() ? (snap.data().uids ?? []) : [];
     const novos = isAdmin ? [...new Set([...uids, uid])] : uids.filter((u) => u !== uid);
-    await setDoc(adminsRef, { uids: novos }, { merge: true });
+    await setDoc(adminsRef, sanitizarParaFirestore({ uids: novos }), { merge: true });
   } catch (erro) {
     console.warn('[progresso] falha ao definir admin:', erro);
   }
