@@ -287,4 +287,3 @@ as bases dos amigos, Reinos Etéreos, árvore de talentos, conquistas, login
 Google e o painel administrativo com `F2`.
 
 Deploy no GitHub Pages funcionando em `/jogo_imperiall_2026/`.
-
