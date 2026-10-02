@@ -170,11 +170,14 @@ export function botao(scene, x, y, rotulo, onClick, opcoes = {}) {
   box.caixa.setAlpha(alfa);
 
   // Zona de clique: um retangulo invisivel dentro do container.
+  // Depth alto (1000) para ter prioridade de input sobre fundos (depth 0).
+  // Sem isso, fundos full-screen com depth 0 interceptam todos os cliques.
   const clique = scene.add
     .rectangle(0, 0, largura, altura, 0xffffff, 0)
     .setOrigin(0, 0)
     .setPosition(dx, dy)
-    .setInteractive({ useHandCursor: true });
+    .setInteractive({ useHandCursor: true })
+    .setDepth(1000);
   box.add(clique);
 
   // Posicionamento do conteudo dentro da caixa.
@@ -233,7 +236,9 @@ export function botao(scene, x, y, rotulo, onClick, opcoes = {}) {
   clique.on('pointerdown', onClick);
 
   return {
-    caixa: box,
+    // `caixa` é o Graphics de fundo (tem setOrigin, width, height).
+    // `container` é o Container Phaser (para add/remove, posicionamento).
+    caixa: box.caixa,
     container: box,
     clique,
     label,
