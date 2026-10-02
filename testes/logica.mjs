@@ -495,6 +495,74 @@ console.log('\n== racas ==');
 }
 
 // =====================================================================
+// Versão: uma fonte da verdade, três consumidores
+//
+// Já divergiram de verdade. `package.json` dizia `0.1.0`, o
+// `CHANGELOG_TECNICO.md` dizia `0.1.2` e a tela "NOVIDADES" do lobby anunciava
+// `v0.3.0` — três números, nenhum certo, e nenhum teste reclamando.
+//
+// A regra agora é mecânica: `package.json` manda, o Vite injeta em
+// `__APP_VERSION__`, e os changelogs têm que concordar. Este bloco falha se
+// alguém versionar só um dos lados, que é exatamente como o estado anterior
+// foi construído.
+// =====================================================================
+console.log('\n== versao (fonte unica: package.json) ==');
+{
+  const raiz = new URL('../', import.meta.url);
+  const ler = (p) => fs.readFileSync(new URL(p, raiz), 'utf8');
+  const versao = JSON.parse(ler('package.json')).version;
+
+  ok(/^\d+\.\d+\.\d+$/.test(versao), `package.json tem versao semver (${versao})`);
+
+  // A versão mais alta entre as seções tem que ser a atual.
+  const secoes = [...ler('CHANGELOG_TECNICO.md').matchAll(/^## \[(\d+\.\d+\.\d+)\]/gm)].map(
+    (m) => m[1],
+  );
+  ok(secoes.length > 0, `CHANGELOG_TECNICO.md tem seções versionadas (${secoes.length})`);
+  const maior = secoes.reduce((a, b) => (a.localeCompare(b, 'en', { numeric: true }) >= 0 ? a : b));
+  ok(
+    maior === versao,
+    `CHANGELOG_TECNICO.md documenta a versão atual (seções: ${secoes.join(', ')}, package.json: ${versao})`,
+  );
+
+  ok(
+    ler('CHANGELOG.md').includes(versao),
+    `CHANGELOG.md cita a versão atual (${versao})`,
+  );
+
+  // Nenhum literal de versão solto pelo código: o jogo tem de ler do define.
+  //
+  // Comentários são removidos antes (a documentação pode — e deve — citar
+  // versões antigas para explicar de onde veio um bug) e o módulo que faz a
+  // ponte é ignorado, porque a doc dele lista justamente os números que
+  // replaces. `VERSAO_TERMOS` fica de fora por ser outro espaço de nomes: a
+  // versão do documento legal não acompanha a versão do jogo.
+  const soSemComentarios = (src) => src.replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/\/\/[^\n]*/g, ' ');
+
+  const literais = [];
+  for (const f of fs.readdirSync(new URL('src', raiz), { recursive: true, encoding: 'utf8' })) {
+    if (!f.endsWith('.js')) continue;
+    if (f === 'versao.js') continue;
+    for (const linha of soSemComentarios(ler(`src/${f}`)).split('\n')) {
+      if (/VERSAO_\w*TERMOS?\s*=/.test(linha)) continue;
+      for (const m of linha.matchAll(/['"`]v?(\d+\.\d+\.\d+)['"`]/g)) {
+        literais.push(`${f}: ${m[0]}`);
+      }
+    }
+  }
+  ok(
+    literais.length === 0,
+    `nenhum literal de versão em src/ (achados: ${literais.join(', ') || 'nenhum'})`,
+  );
+
+  // E o módulo que faz a ponte precisa realmente usar o define.
+  ok(
+    ler('src/dados/versao.js').includes('__APP_VERSION__'),
+    'src/dados/versao.js le __APP_VERSION__ em vez de um literal',
+  );
+}
+
+// =====================================================================
 // Chamadas para funções que não existem
 //
 // Dois bugs reais de uma vez vieram daqui, e os dois derrubavam uma TELA

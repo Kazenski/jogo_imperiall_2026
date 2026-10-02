@@ -27,6 +27,7 @@ import {
   restaurarFoco,
   FONTE_UI,
 } from '../ui/comuns.js';
+import { texturaDeUrl } from '../ui/formularios.js';
 import {
   CAMPOS_ITEM,
   CAMPOS_CLASSE,
@@ -122,6 +123,12 @@ const ABAS = [
 const LARGURA_LISTA = 320;
 const TOPO = 116;
 const GAP = 6;
+
+// Layout do formulário: três colunas (lista | campos | preview)
+const LARGURA_PREVIEW = 280;           // largura fixa da coluna de preview
+const GAP_COLUNA = 24;                 // espaço entre colunas
+const LARGURA_MIN_CAMPOS = 360;        // largura mínima da coluna central
+const LARGURA_MAX_CAMPOS = 640;        // largura máxima da coluna central
 
 export class AdminScene extends Phaser.Scene {
   constructor() {
@@ -771,25 +778,40 @@ export class AdminScene extends Phaser.Scene {
     }
   }
 
-  // ---------- formulário ----------
+  // ---------- formulário (layout 3 colunas: lista | campos | preview) ----------
 
+  /**
+   * Desenha o formulário de edição/criação com três colunas:
+   * 1. Lista (esquerda, fixa) — já desenhada por `desenharCatalogo`
+   * 2. Campos (centro, flexível) — preenche o espaço disponível
+   * 3. Preview (direita, opcional) — aparece quando há campo de imagem
+   */
   desenharFormulario(campos, aba, item) {
-    const x0 = this.linhaLista + 40;
-    const larguraUtil = Math.max(260, this.scale.width - x0 - 44);
+    // --- Geometria das colunas ---
+    const listaDireita = this.linhaLista;                    // x onde a lista termina
+    const previewLargura = LARGURA_PREVIEW;
+    const previewX = this.scale.width - previewLargura - 24; // margem direita 24px
+    const camposDisponivel = previewX - GAP_COLUNA - (listaDireita + 40);
+    const camposLargura = Phaser.Math.Clamp(camposDisponivel, LARGURA_MIN_CAMPOS, LARGURA_MAX_CAMPOS);
+    const camposX = listaDireita + 40 + Math.max(0, (camposDisponivel - camposLargura) / 2);
 
+    // Verifica se há campo de imagem para mostrar preview
+    const campoImagem = campos.find((c) => c.tipo === 'imagem');
+    const temPreview = Boolean(campoImagem && (item?.[campoImagem.chave] || this._valorPreviewTemporario));
+    const previewAtivoX = temPreview ? previewX : previewX + previewLargura + GAP_COLUNA; // esconde fora da tela se não houver
+
+    // --- Título ---
     const titulo = item ? `Editar: ${item.nome ?? item.id}` : `Novo registro em ${aba.label}`;
-    this.camada.add(uiTitulo(this, x0, TOPO, titulo, '15px').setOrigin(0, 0));
+    this.camada.add(uiTitulo(this, camposX, TOPO, titulo, '15px').setOrigin(0, 0));
 
-    // ID + slug visíveis: é assim que o admin referencia o registro nos campos
-    // de texto livre (insumos, loot, pré-requisitos), então escondê-lo só gera
-    // erro de digitação.
     const idTexto = item?.id ? `id: ${item.id}` : 'id: gerado ao salvar';
     this.camada.add(
-      uiTexto(this, x0, TOPO + 24, idTexto, { fontSize: '10px', color: PERGAMINHO })
+      uiTexto(this, camposX, TOPO + 24, idTexto, { fontSize: '10px', color: PERGAMINHO })
         .setOrigin(0, 0)
         .setAlpha(0.6),
     );
 
+    // --- Coluna central: campos ---
     let y = TOPO + 44;
     const refs = {};
 
@@ -801,9 +823,9 @@ export class AdminScene extends Phaser.Scene {
 
       const ctrl = criarCampo(this, {
         rotulo: campo.rotulo,
-        x: x0,
+        x: camposX,
         y,
-        largura: Math.min(larguraUtil, campo.tipo === 'area' || campo.tipo === 'imagem' ? 420 : 300),
+        largura: Math.min(camposLargura - 16, campo.tipo === 'area' || campo.tipo === 'imagem' ? 420 : 300),
         tipo: campo.tipo,
         valor,
         opcoes: campo.opcoes ?? [],
@@ -812,11 +834,18 @@ export class AdminScene extends Phaser.Scene {
         placeholder: campo.placeholder ?? '',
         multilinha: campo.tipo === 'area',
         pastaUpload: campo.pastaUpload ?? aba.pastaUpload ?? 'imagens',
-        // Propaga a chave do esquema para o controle: sem isso, o formulario
-        // nao sabia qual campo era qual, e o botao Salvar nao conseguia
-        // montar o objeto final.
         chave: campo.chave,
       });
+
+      // Guarda referência ao preview para atualização ao vivo
+      if (campo.tipo === 'imagem') {
+        this._campoImagemAtual = { ctrl, campo, imgDisplay: null };
+        // Callback ao mudar a imagem (upload ou URL)
+        const aoMudarOriginal = campo.aoMudar;
+        ctrl.container.on('imagem_atualizada', (novaUrl) => {
+          this._atualizarPreviewGrande(novaUrl, previewAtivoX, TOPO + 44);
+        });
+      }
 
       refs[campo.chave] = { ctrl, campo };
       this.camposVivos.push(ctrl);
@@ -824,11 +853,16 @@ export class AdminScene extends Phaser.Scene {
       y += ctrl.altura;
     }
 
-    // Ações
+    // --- Coluna direita: preview grande ---
+    if (temPreview) {
+      this._desenharPreviewGrande(previewAtivoX, TOPO + 44, campoImagem, item);
+    }
+
+    // --- Botões de ação (alinhados à coluna central) ---
     const yAcao = Math.min(y + 8, this.scale.height - 74);
     const btnSalvar = botao(
       this,
-      x0 + 90,
+      camposX + (camposLargura - 180) / 2,
       yAcao,
       item ? 'Salvar alterações' : 'Criar registro',
       () => this.salvar(campos, aba, item, refs),
@@ -836,14 +870,16 @@ export class AdminScene extends Phaser.Scene {
     );
     this.camada.add(btnSalvar.container);
 
-    const btnCancelar = botao(this, x0 + 290, yAcao, 'Cancelar', () => {
+    const btnCancelar = botao(this, camposX + (camposLargura - 180) / 2 + 190, yAcao, 'Cancelar', () => {
       this.selecionado = null;
+      this._campoImagemAtual = null;
+      this._valorPreviewTemporario = null;
       this.redesenhar();
     }, { largura: 140, altura: 34, tamanho: '13px', cor: 0x3a2c20, corHover: 0x4a3828, corTexto: PERGAMINHO });
     this.camada.add(btnCancelar.container);
 
     if (item) {
-      const btnApagar = botao(this, x0 + 450, yAcao, 'Apagar', () => this.confirmarApagar(aba, item), {
+      const btnApagar = botao(this, camposX + (camposLargura - 180) / 2 + 340, yAcao, 'Apagar', () => this.confirmarApagar(aba, item), {
         largura: 120,
         altura: 34,
         tamanho: '13px',
@@ -853,6 +889,85 @@ export class AdminScene extends Phaser.Scene {
       });
       this.camada.add(btnApagar.container);
     }
+  }
+
+  /**
+   * Desenha o preview grande da imagem na coluna direita.
+   */
+  _desenharPreviewGrande(x, y, campoImagem, item) {
+    const PREVIEW_GRANDE = 220;
+    const padding = 12;
+
+    // Painel de fundo
+    const painel = uiPainel(this, x - 8, y - 8, LARGURA_PREVIEW + 16, PREVIEW_GRANDE + 64, 0x14100c, 0.99);
+    this.camada.add(painel);
+
+    // Título
+    this.camada.add(
+      uiTexto(this, x + 4, y, 'Preview da Imagem', { fontSize: '12px', color: OURO })
+        .setOrigin(0, 0),
+    );
+
+    // Moldura do preview
+    const moldura = caixaArredondada(this, x, y + 22, LARGURA_PREVIEW, PREVIEW_GRANDE, {
+      raio: 8,
+      preenchimento: 0x0f0b07,
+      borda: 0x3a2c20,
+      larguraBorda: 1,
+      origem: [0, 0],
+    });
+    this.camada.add(moldura);
+
+    // Imagem
+    const urlAtual = item?.[campoImagem.chave] ?? this._valorPreviewTemporario ?? '';
+    const img = this.add.image(x + LARGURA_PREVIEW / 2, y + 22 + PREVIEW_GRANDE / 2, 'painel')
+      .setDisplaySize(PREVIEW_GRANDE - 24, PREVIEW_GRANDE - 24);
+    this.camada.add(img);
+
+    // Texto "sem imagem" se vazio
+    const semImg = this.add
+      .text(x + LARGURA_PREVIEW / 2, y + 22 + PREVIEW_GRANDE / 2, 'sem imagem', {
+        ...FONTE_UI,
+        fontSize: '11px',
+        color: '#6a5a48',
+      })
+      .setOrigin(0.5);
+    this.camada.add(semImg);
+
+    // Guarda referências para atualização ao vivo
+    this._previewGrande = { img, semImg, url: urlAtual };
+
+    if (urlAtual) {
+      this._carregarPreviewGrande(urlAtual);
+    }
+  }
+
+  /**
+   * Atualiza o preview grande quando a imagem muda (upload ou URL).
+   */
+  _atualizarPreviewGrande(novaUrl, x, y) {
+    if (!this._previewGrande) return;
+    const { img, semImg } = this._previewGrande;
+    if (novaUrl) {
+      semImg.setVisible(false);
+      img.setVisible(true);
+      this._carregarPreviewGrande(novaUrl);
+    } else {
+      semImg.setVisible(true);
+      img.setVisible(false);
+    }
+    this._previewGrande.url = novaUrl;
+  }
+
+  /** Baixa a imagem e aplica no preview grande. */
+  _carregarPreviewGrande(url) {
+    const { img } = this._previewGrande;
+    const chave = `admin_preview_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+    texturaDeUrl(this, url, chave).then((ok) => {
+      if (ok && this.textures.exists(chave)) {
+        img.setTexture(chave);
+      }
+    });
   }
 
   /** Converte o valor gravado no Firestore para o que o campo deve exibir. */

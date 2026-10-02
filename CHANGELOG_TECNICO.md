@@ -11,6 +11,252 @@ Formato inspirado em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/)
 
 ---
 
+## [0.1.3] — Lobby como hub, CRUD real e exclusao com carencia
+
+*Outubro de 2026*
+
+Objetivo: depois de "Entrar com Google" o jogador sempre cai no salao (ate 10
+herois), clica num heroi para confirmar a entrada, e tem CRUD completo — com
+exclusao que so vale 30 dias depois.
+
+### 1. O lobby existia, mas nao fazia nada
+
+A tela estava desenhada e registrada no `config.js`. **Os quatro caminhos
+mortos** e o porque de "entrar" parecer quebrado:
+
+| Caminho | Estado anterior | O que acontecia |
+| --- | --- | --- |
+| `aoEntrar` | `LobbyScene.init` lia `dados.aoEntrar`, **ninguem passava** | no-op silencioso |
+| `novoPersonagem` | `aoCriado()` so reiniciava a cena | nunca chamava `criarPersonagem` |
+| `editarPersonagem` | passava `personagem:`; `CriacaoScene.init` le **`estado:`** | modo edicao nunca ativava, nunca salvava |
+| `APAGAR` | chamava `apagarPersonagem` direto | sem carencia, sem volta |
+
+Dois outros desvios: `irParaLobby` ainda tinha um ramo `temChars` que pulava o
+lobby e ia direto para `Criacao` (contrariando o requisito), e o lobby nao
+iniziava `World` — apenas voltava para ele.
+
+**Correcao.** `irParaLobby` perdeu o ramo. `LobbyScene` passou a fazer a
+transicao ele mesmo: `carregarPersonagem` + `definirPersonagemAtivo` +
+`scene.start('World', ...)`, passando `podeSair`/`email`/`nomeConta` por `init`
+em vez da indirecao `aoEntrar` que ninguem fornecia. `aoConcluir` das rotas de
+criar/editar agora grava de verdade (`criarPersonagem` / `salvarPersonagem`) e
+`CriacaoScene` recebe `estado: char` + `editando: true`.
+
+### 2. Exclusao com carencia de 30 dias (`src/core/progresso.js`)
+
+`exclusaoAgendadaEm` entra no documento do personagem (`criarPersonagem` ja
+inicializa em `null`), e o bloco novo expoe `DIAS_CARENCIA_EXCLUSAO = 30`,
+`JANELA_EXCLUSAO_MS`, `exclusaoPendente`, `exclusaoExpiradaEm`,
+`diasRestantesExclusao`, `exclusaoVencida`, `personagemJogavel`,
+`agendarExclusao`, `cancelarExclusao` e `purgarExclusoesExpiradas`.
+
+`MAX_PERSONAGENS` saiu do lobby e passou a ser exportado de `progresso.js`,
+para que o limite tenha uma fonte só.
+
+`apagarPersonagem()` continua existindo (seed e manutencao) mas foi marcado
+`@deprecated`: chamar direto burla a carencia e nao da chance de resgate.
+
+### 3. Termos: `salvarTermos` em vez do atalho
+
+Aceitar os termos usava `salvarProgresso`, que **caia em `criarPersonagem`** e
+criava um heroi fantasma "Viajante" so para guardar a data. Novo `salvarTermos`
+grava direto no perfil. As duas chamadas a `salvarProgresso` no login foram
+removidas — o nome de exibicao do Google virou so sugestao na tela de criacao.
+
+### 4. Bugs de runtime encontrados no navegador
+
+`npm test` roda logica pura em Node e **nunca importa Phaser** (README, item
+15). Tudo abaixo passou com build verde e suite verde; nenhum era alcancavel sem
+rodar o jogo.
+
+**(a) `setStrokeStyle()` em `Container`.** O hover dos cartoes fazia
+`bg.setStrokeStyle(...)`, sendo que `caixaArredondada()` devolve um
+**Container** — o `Graphics` e `.caixa`. `TypeError` no primeiro hover.
+Trocado por `pintarCartao()`, que faz `clear()` e redesenha.
+
+**(b) `avisar()` num `Text` morto.** `salvarCriacao` / `salvarEdicao` /
+`executarExclusao` / `executarResgate` rodam **depois** de `await`, ou seja com
+o lobby ja parado. O `Text` continua no JS mas o canvas foi destruido:
+
+```
+TypeError: Cannot read properties of null (reading 'glTexture')
+    at Text2.updateText ... at TextStyle2.setColor ... at LobbyScene.avisar
+```
+
+Como a chamada ficava **antes** do `try` do chamador, o `throw` comia a
+gravacao inteira: o heroi nao era salvo, nenhuma cena mudava e o jogador
+ficava preso em `Criacao` sem mensagem nenhuma. Duas correcoes: guarda
+`if (!this.mensagem || !this.sys.isActive()) return;` em `avisar()`, e
+`this.mensagem = null` no `SHUTDOWN`.
+
+Atencao: dentro de `create()` o `sys.isActive()` **ainda e falso** (o status
+vira RUNNING depois), entao a mensagem que chega nos dados da cena e escrita
+direto em `this.mensagem`, sem passar por `avisar()`.
+
+**(c) `ScenePlugin.start()` nao derruba a cena de baixo.** `voltarAoLobby()`
+chama `scene.start('Lobby', ...)` a partir do **proprio lobby, que ja estava
+parado** — `start()` e enfileirado e nao tem cena "corrente" para derrubar. A
+`Criacao` continuava de pe por baixo: duas cenas ativas, dois conjuntos de input
+disputando o mesmo ponteiro, e o `<input>` do DOM por cima do lobby novo.
+Centralizado em `voltarAoLobby()`, que agora tambem para a `Criacao` — mas
+**so quando ela esta ativa**: `SceneManager.stop()` numa cena ja parada cai no
+ramo `sleep()` em vez de `shutdown()`, e `sleep()` nao dispara `destroy()`
+(README, item 18).
+
+**(d) Tipografia que so morre em producao.** A constante era declarada
+`JANELA_EXCLUCAO_MS` (19 chars) e usada como `JANELA_EXCLUCAUCO_MS` (20) —
+`ReferenceError` garantido, build verde. Achei pelo scanner de `testes/logica.mjs`.
+
+**(e) Grade fixa estourava o painel.** 10 slots x 220px em 4 colunas precisam
+944px; o painel dava 650. `calcularGrade()` calcula colunas e linhas pelo
+espaco disponivel.
+
+**(f) Deducao por nome em `CriacaoScene`.** O modo edicao era deduzido do nome
+do heroi — um heroi chamado literalmente "Viajante" era lido como "sem
+personagem". Agora respeita o flag `editando` explicito.
+
+### 5. Entrada em fila do Phaser (medido, nao deduzido)
+
+`InputManager.hitTest` **nao ordena** nada; `sortGameObjects` so roda no
+`processOverEvents`. A ordem de `POINTER_DOWN` e a **ordem de insercao** em
+`input._list`. Medido num botao do modal: `[slot, capa, botao]` — o slot do
+fundo primeiro. O primeiro a chamar `stopPropagation()` cancela os seguintes
+(`processDownEvents` quebra em `_eventData.cancelled`), ou seja o
+`stopPropagation` no objeto mais antigo mata o botao que esta na frente.
+
+A solucao adotada **nao** mexe na ordem:
+
+1. `input.enabled = false` em tudo que ja estava na tela enquanto o modal abre;
+2. a `capa` do modal e criada **por ultimo**, depois dos botoes.
+
+O mesmo padrao esta documentado no README (item 16) e o defeito equivalente
+existe em `StatusScene.js:180` e `TalentosScene.js:100`, que adicionam a `capa`
+**antes** dos botoes — la, clicar em qualquer botao do modal destroi o modal
+primeiro. **Nao corrigido aqui: fora do escopo desta versao.**
+
+### 6. Testes
+
+15 casos novos em `testes/logica.mjs`, secao `== exclusao com carencia ==`:
+pendente/vencido, borda de 30 dias (ms antes e depois), `diasRestantesExclusao`
+com 0/1/muitos dias, `personagemJogavel` para heroi livre, congelado e vencido,
+o cancelamento limpando `exclusaoAgendadaEm`, a purga removendo so os vencidos,
+relogio valendo a carencia mesmo depois de `criarPersonagem`, e o estado limpo
+de `criarPersonagem`.
+
+### Verificacao em navegador
+
+Percorrido o CRUD inteiro com o `window.__game` do dev server: criar (grava e
+volta ao salao com mensagem), editar (modo edicao ativo, nome/raca/vocacao
+grava), excluir (agenda, persiste, mostra `EXCLUIXDO EM 18 DIAS`), cancelar
+(resgata), purga (some o que venceu 30 dias, com aviso), limite de 10 (11o
+heroi mostra "Limite de 10 herois atingido"), heroi congelado sem
+`ENTRAR NO MUNDO`, clique no cartao abrindo a confirmacao e `World` ativa com o
+heroi certo.
+---
+
+## [0.1.2] — Login do Google, layout da entrada e o scanner de constantes
+
+*Outubro de 2026*
+
+### 1. `ALTURA_CHIP is not defined` (crash real, build verde)
+
+`src/ui/formularios.js::campoMultiselec()` usava `ALTURA_CHIP` como valor
+inicial de `totalAlturaChip`. Esse identificador **não existe em lugar nenhum
+do repositório** — só a linha de uso. Como `refazer()` sobrescreve o valor
+imediatamente depois (inclusive quando `lista` é vazio, onde `linhasUsadas`
+fica `1`), o inicial só precisa ser coerente com o cálculo de uma linha:
+`ALTO_CHIP`.
+
+Bug pré-existente, nunca alcançado porque o Admin ficava atrás do input morto
+que o `0.1.1` corrigiu. O `npm run build` e o `npm test` passavam: `npm test`
+roda lógica pura em Node e **nunca importa Phaser**, então nenhum bug de
+runtime de cena é detectável por ele.
+
+### 2. "Entrar com Google não faz nada" — três causas somadas
+
+**(a) Rejeição não tratada no `observarLogin`.** O callback era
+`observarLogin(async (user) => { ... await this.entrar(user) })`.
+`onAuthStateChanged` **não aguarda callbacks async nem captura rejeição**. Uma
+falha em `entrar()` virava `Uncaught (in promise)` e o jogador via uma tela
+parada, sem mensagem — exatamente o sintoma reportado. O callback agora é
+síncrono e encerra em `.catch(() => this.marcarOcupado(false))`.
+
+**(b) `entrar()` rodava duas vezes por login.** `signInWithPopup` resolve e
+`tentarGoogle` chamava `entrar()`; o mesmo sign-in **também** dispara
+`onAuthStateChanged`, cujo callback chamava `entrar()` de novo. Duas execuções
+paralelas disputando `scene.start()`, o dobro de escritas no Firestore, e o
+status aparecendo/sumindo. Novo `entrarUmaVez(user)` memoiza a promessa por
+`uid`; ela só é liberada **se falhar**, para o jogador poder tentar de novo.
+`tentarGoogle` deixou de chamar `entrar()` diretamente — quem conduz a
+transição é o observer, com uma rede de segurança caso ele não dispare
+(senão a tela ficaria presa em "Abrindo o login..." para sempre).
+
+**(c) Botão morto com sessão já ativa.** `onAuthStateChanged` dispara na hora
+se o navegador ainda tem sessão, e o jogo entra sozinho. Nesse estado
+clicar "Entrar com Google" não fazia nada de útil. Agora `tentarGoogle`
+detecta `usuarioAtual` e responde em texto em vez de abrir o popup.
+
+> Verificado e **não** é causa: as 6 variáveis `VITE_FIREBASE_*` estão no
+> bundle publicado, a API key responde 200 e `kazenski.github.io` está em
+> `authorizedDomains`. Nem popup bloqueado nem domínio não autorizado.
+
+**(d) Sem trava de reentrada.** Clicar repetidamente abria popups empilhados.
+`this.ocupado` bloqueia os dois handlers; o feedback vai para o próprio botão
+(`setTexto` + `definirVisual` + `setAlpha`), não só para a linha de status.
+
+### 3. Layout da tela de entrada
+
+Quatro posições independentes (`height * 0.38`, `0.55`, `0.66`, `0.82`) foram
+troca­das por **um `y` que avança**, com o status **colado abaixo dos botões**
+(`setOrigin(0.5, 0)`) em vez de 82% da altura. Com quatro multiplicos
+independentes nada era garantido: em janela baixa a mensagem — a única coisa que
+explica um login que falhou — batia no botão de baixo ou saía da tela.
+
+`larguraBotao = Math.min(320, Math.max(200, width - 56))` evita estouro em tela
+estreita. Novo `painelConectado` (`OURO`) mostra com quem a sessão está ativa.
+
+### 4. Scanner de constantes não declaradas (`testes/logica.mjs`)
+
+O teste "chamadas para funções inexistentes" é **estruturalmente cego** ao
+`ALTURA_CHIP`: ele só vê identificador seguido de `(`, e lá não há `(`. Foi
+estendido para checar constantes em caixa alta usadas como valor:
+
+```js
+const usoConstante = /(^|[^\p{L}\p{N}_$.?>])([A-Z][A-Z0-9_]{2,})($|[^\p{L}\p{N}_$?:(])/gu;
+```
+
+**Deliberadamente estreito.** A primeira versão tentou checar *todo*
+identificador solto e produziu **mais de mil falsos positivos** — literais
+numéricos, `this`, `const`, chaves de desestruturação e nomes dentro de
+`import {…}` viram todos "suspeitos". Um teste que accuse mil fantasmas é pior
+do que nenhum: acostuma a ignorar a saída. `ALTURA_CHIP` e `ZOOM_MAX` são
+caixa alta usada como valor sem declaração, e é essa a classe que morre em
+produção com build verde.
+
+Correção de apoio em `disponiveis`: `variavel` só pegava o primeiro nome de
+`const A = 1, B = 2`, então `ZOOM_MAX` (linha 824) parecia não declarado
+apesar de estar declarado — um falso positivo do próprio teste. Novo
+`declaracaoVar` pega a declaração inteira.
+
+**Validação:** reintroduzi `ALTURA_CHIP` e o teste acusou
+`ui/formularios.js: ALTURA_CHIP`; com o fix, passa limpo. Suspeitas: 1
+com o bug, 0 sem.
+
+### Armadilha: `new RegExp(template)` com `\p{...}`
+
+O regex nasceu como `new RegExp(\`(^|[^\\p{L}...])\`, 'gu')` e **não casava com
+nada em lugar nenhum do repositório — sem erro nenhum**. Dentro de um template
+literal os `\p{...}` exigem escape duplo, e o `>` foi parar **depois** do `]`,
+fora da classe de caracteres. O `0` de "nenhuma suspeita" parecia signal verde.
+Por isso o regex agora é **literal**, sem template e sem escape duplo.
+
+Diagnóstico: comparar `usoSolto.source` com um literal equivalente, ambos de
+61 caracteres, e achar os índices 19/20 trocados.
+
+**Regra geral deste repositório: regex com `\p{...}` vai como literal, nunca
+como `new RegExp(template)`.**
+---
+
 ## [0.1.1] — Hotfix: input e posicionamento de botões
 
 *Outubro de 2026*
@@ -225,7 +471,6 @@ Duas lições específicas:
 2. **Teste de regressão que teria pegado isto:** um teste estático que rode
    `setInteractive` em cada GameObject criado e falha se o `input.hitAreaCallback`
    ficar `null`. Barato, e pega o erro na hora da escrita.
-
 ---
 
 ## [Não publicado] — Base editorial, conformidade e melhorias de gameplay
@@ -590,7 +835,6 @@ Itens/Classes/Talentos/Monstros/Receitas/Reinos/Conquistas podem ter
 - Editor de pixels: testar upload real + preview no jogo.
 - Auto-combate / missões / guildas / servidores dedicados.
 - Anti-cheat para auto-farm futuro.
-
 ---
 
 ## Histórico anterior
@@ -603,251 +847,4 @@ as bases dos amigos, Reinos Etéreos, árvore de talentos, conquistas, login
 Google e o painel administrativo com `F2`.
 
 Deploy no GitHub Pages funcionando em `/jogo_imperiall_2026/`.
-
 ---
-
-## [0.1.2] — Login do Google, layout da entrada e o scanner de constantes
-
-*Outubro de 2026*
-
-### 1. `ALTURA_CHIP is not defined` (crash real, build verde)
-
-`src/ui/formularios.js::campoMultiselec()` usava `ALTURA_CHIP` como valor
-inicial de `totalAlturaChip`. Esse identificador **não existe em lugar nenhum
-do repositório** — só a linha de uso. Como `refazer()` sobrescreve o valor
-imediatamente depois (inclusive quando `lista` é vazio, onde `linhasUsadas`
-fica `1`), o inicial só precisa ser coerente com o cálculo de uma linha:
-`ALTO_CHIP`.
-
-Bug pré-existente, nunca alcançado porque o Admin ficava atrás do input morto
-que o `0.1.1` corrigiu. O `npm run build` e o `npm test` passavam: `npm test`
-roda lógica pura em Node e **nunca importa Phaser**, então nenhum bug de
-runtime de cena é detectável por ele.
-
-### 2. "Entrar com Google não faz nada" — três causas somadas
-
-**(a) Rejeição não tratada no `observarLogin`.** O callback era
-`observarLogin(async (user) => { ... await this.entrar(user) })`.
-`onAuthStateChanged` **não aguarda callbacks async nem captura rejeição**. Uma
-falha em `entrar()` virava `Uncaught (in promise)` e o jogador via uma tela
-parada, sem mensagem — exatamente o sintoma reportado. O callback agora é
-síncrono e encerra em `.catch(() => this.marcarOcupado(false))`.
-
-**(b) `entrar()` rodava duas vezes por login.** `signInWithPopup` resolve e
-`tentarGoogle` chamava `entrar()`; o mesmo sign-in **também** dispara
-`onAuthStateChanged`, cujo callback chamava `entrar()` de novo. Duas execuções
-paralelas disputando `scene.start()`, o dobro de escritas no Firestore, e o
-status aparecendo/sumindo. Novo `entrarUmaVez(user)` memoiza a promessa por
-`uid`; ela só é liberada **se falhar**, para o jogador poder tentar de novo.
-`tentarGoogle` deixou de chamar `entrar()` diretamente — quem conduz a
-transição é o observer, com uma rede de segurança caso ele não dispare
-(senão a tela ficaria presa em "Abrindo o login..." para sempre).
-
-**(c) Botão morto com sessão já ativa.** `onAuthStateChanged` dispara na hora
-se o navegador ainda tem sessão, e o jogo entra sozinho. Nesse estado
-clicar "Entrar com Google" não fazia nada de útil. Agora `tentarGoogle`
-detecta `usuarioAtual` e responde em texto em vez de abrir o popup.
-
-> Verificado e **não** é causa: as 6 variáveis `VITE_FIREBASE_*` estão no
-> bundle publicado, a API key responde 200 e `kazenski.github.io` está em
-> `authorizedDomains`. Nem popup bloqueado nem domínio não autorizado.
-
-**(d) Sem trava de reentrada.** Clicar repetidamente abria popups empilhados.
-`this.ocupado` bloqueia os dois handlers; o feedback vai para o próprio botão
-(`setTexto` + `definirVisual` + `setAlpha`), não só para a linha de status.
-
-### 3. Layout da tela de entrada
-
-Quatro posições independentes (`height * 0.38`, `0.55`, `0.66`, `0.82`) foram
-troca­das por **um `y` que avança**, com o status **colado abaixo dos botões**
-(`setOrigin(0.5, 0)`) em vez de 82% da altura. Com quatro multiplicos
-independentes nada era garantido: em janela baixa a mensagem — a única coisa que
-explica um login que falhou — batia no botão de baixo ou saía da tela.
-
-`larguraBotao = Math.min(320, Math.max(200, width - 56))` evita estouro em tela
-estreita. Novo `painelConectado` (`OURO`) mostra com quem a sessão está ativa.
-
-### 4. Scanner de constantes não declaradas (`testes/logica.mjs`)
-
-O teste "chamadas para funções inexistentes" é **estruturalmente cego** ao
-`ALTURA_CHIP`: ele só vê identificador seguido de `(`, e lá não há `(`. Foi
-estendido para checar constantes em caixa alta usadas como valor:
-
-```js
-const usoConstante = /(^|[^\p{L}\p{N}_$.?>])([A-Z][A-Z0-9_]{2,})($|[^\p{L}\p{N}_$?:(])/gu;
-```
-
-**Deliberadamente estreito.** A primeira versão tentou checar *todo*
-identificador solto e produziu **mais de mil falsos positivos** — literais
-numéricos, `this`, `const`, chaves de desestruturação e nomes dentro de
-`import {…}` viram todos "suspeitos". Um teste que accuse mil fantasmas é pior
-do que nenhum: acostuma a ignorar a saída. `ALTURA_CHIP` e `ZOOM_MAX` são
-caixa alta usada como valor sem declaração, e é essa a classe que morre em
-produção com build verde.
-
-Correção de apoio em `disponiveis`: `variavel` só pegava o primeiro nome de
-`const A = 1, B = 2`, então `ZOOM_MAX` (linha 824) parecia não declarado
-apesar de estar declarado — um falso positivo do próprio teste. Novo
-`declaracaoVar` pega a declaração inteira.
-
-**Validação:** reintroduzi `ALTURA_CHIP` e o teste acusou
-`ui/formularios.js: ALTURA_CHIP`; com o fix, passa limpo. Suspeitas: 1
-com o bug, 0 sem.
-
-### Armadilha: `new RegExp(template)` com `\p{...}`
-
-O regex nasceu como `new RegExp(\`(^|[^\\p{L}...])\`, 'gu')` e **não casava com
-nada em lugar nenhum do repositório — sem erro nenhum**. Dentro de um template
-literal os `\p{...}` exigem escape duplo, e o `>` foi parar **depois** do `]`,
-fora da classe de caracteres. O `0` de "nenhuma suspeita" parecia signal verde.
-Por isso o regex agora é **literal**, sem template e sem escape duplo.
-
-Diagnóstico: comparar `usoSolto.source` com um literal equivalente, ambos de
-61 caracteres, e achar os índices 19/20 trocados.
-
-**Regra geral deste repositório: regex com `\p{...}` vai como literal, nunca
-como `new RegExp(template)`.**
-
----
-
-## [0.1.3] — Lobby como hub, CRUD real e exclusao com carencia
-
-*Outubro de 2026*
-
-Objetivo: depois de "Entrar com Google" o jogador sempre cai no salao (ate 10
-herois), clica num heroi para confirmar a entrada, e tem CRUD completo — com
-exclusao que so vale 30 dias depois.
-
-### 1. O lobby existia, mas nao fazia nada
-
-A tela estava desenhada e registrada no `config.js`. **Os quatro caminhos
-mortos** e o porque de "entrar" parecer quebrado:
-
-| Caminho | Estado anterior | O que acontecia |
-| --- | --- | --- |
-| `aoEntrar` | `LobbyScene.init` lia `dados.aoEntrar`, **ninguem passava** | no-op silencioso |
-| `novoPersonagem` | `aoCriado()` so reiniciava a cena | nunca chamava `criarPersonagem` |
-| `editarPersonagem` | passava `personagem:`; `CriacaoScene.init` le **`estado:`** | modo edicao nunca ativava, nunca salvava |
-| `APAGAR` | chamava `apagarPersonagem` direto | sem carencia, sem volta |
-
-Dois outros desvios: `irParaLobby` ainda tinha um ramo `temChars` que pulava o
-lobby e ia direto para `Criacao` (contrariando o requisito), e o lobby nao
-iniziava `World` — apenas voltava para ele.
-
-**Correcao.** `irParaLobby` perdeu o ramo. `LobbyScene` passou a fazer a
-transicao ele mesmo: `carregarPersonagem` + `definirPersonagemAtivo` +
-`scene.start('World', ...)`, passando `podeSair`/`email`/`nomeConta` por `init`
-em vez da indirecao `aoEntrar` que ninguem fornecia. `aoConcluir` das rotas de
-criar/editar agora grava de verdade (`criarPersonagem` / `salvarPersonagem`) e
-`CriacaoScene` recebe `estado: char` + `editando: true`.
-
-### 2. Exclusao com carencia de 30 dias (`src/core/progresso.js`)
-
-`exclusaoAgendadaEm` entra no documento do personagem (`criarPersonagem` ja
-inicializa em `null`), e o bloco novo expoe `DIAS_CARENCIA_EXCLUSAO = 30`,
-`JANELA_EXCLUSAO_MS`, `exclusaoPendente`, `exclusaoExpiradaEm`,
-`diasRestantesExclusao`, `exclusaoVencida`, `personagemJogavel`,
-`agendarExclusao`, `cancelarExclusao` e `purgarExclusoesExpiradas`.
-
-`MAX_PERSONAGENS` saiu do lobby e passou a ser exportado de `progresso.js`,
-para que o limite tenha uma fonte só.
-
-`apagarPersonagem()` continua existindo (seed e manutencao) mas foi marcado
-`@deprecated`: chamar direto burla a carencia e nao da chance de resgate.
-
-### 3. Termos: `salvarTermos` em vez do atalho
-
-Aceitar os termos usava `salvarProgresso`, que **caia em `criarPersonagem`** e
-criava um heroi fantasma "Viajante" so para guardar a data. Novo `salvarTermos`
-grava direto no perfil. As duas chamadas a `salvarProgresso` no login foram
-removidas — o nome de exibicao do Google virou so sugestao na tela de criacao.
-
-### 4. Bugs de runtime encontrados no navegador
-
-`npm test` roda logica pura em Node e **nunca importa Phaser** (README, item
-15). Tudo abaixo passou com build verde e suite verde; nenhum era alcancavel sem
-rodar o jogo.
-
-**(a) `setStrokeStyle()` em `Container`.** O hover dos cartoes fazia
-`bg.setStrokeStyle(...)`, sendo que `caixaArredondada()` devolve um
-**Container** — o `Graphics` e `.caixa`. `TypeError` no primeiro hover.
-Trocado por `pintarCartao()`, que faz `clear()` e redesenha.
-
-**(b) `avisar()` num `Text` morto.** `salvarCriacao` / `salvarEdicao` /
-`executarExclusao` / `executarResgate` rodam **depois** de `await`, ou seja com
-o lobby ja parado. O `Text` continua no JS mas o canvas foi destruido:
-
-```
-TypeError: Cannot read properties of null (reading 'glTexture')
-    at Text2.updateText ... at TextStyle2.setColor ... at LobbyScene.avisar
-```
-
-Como a chamada ficava **antes** do `try` do chamador, o `throw` comia a
-gravacao inteira: o heroi nao era salvo, nenhuma cena mudava e o jogador
-ficava preso em `Criacao` sem mensagem nenhuma. Duas correcoes: guarda
-`if (!this.mensagem || !this.sys.isActive()) return;` em `avisar()`, e
-`this.mensagem = null` no `SHUTDOWN`.
-
-Atencao: dentro de `create()` o `sys.isActive()` **ainda e falso** (o status
-vira RUNNING depois), entao a mensagem que chega nos dados da cena e escrita
-direto em `this.mensagem`, sem passar por `avisar()`.
-
-**(c) `ScenePlugin.start()` nao derruba a cena de baixo.** `voltarAoLobby()`
-chama `scene.start('Lobby', ...)` a partir do **proprio lobby, que ja estava
-parado** — `start()` e enfileirado e nao tem cena "corrente" para derrubar. A
-`Criacao` continuava de pe por baixo: duas cenas ativas, dois conjuntos de input
-disputando o mesmo ponteiro, e o `<input>` do DOM por cima do lobby novo.
-Centralizado em `voltarAoLobby()`, que agora tambem para a `Criacao` — mas
-**so quando ela esta ativa**: `SceneManager.stop()` numa cena ja parada cai no
-ramo `sleep()` em vez de `shutdown()`, e `sleep()` nao dispara `destroy()`
-(README, item 18).
-
-**(d) Tipografia que so morre em producao.** A constante era declarada
-`JANELA_EXCLUCAO_MS` (19 chars) e usada como `JANELA_EXCLUCAUCO_MS` (20) —
-`ReferenceError` garantido, build verde. Achei pelo scanner de `testes/logica.mjs`.
-
-**(e) Grade fixa estourava o painel.** 10 slots x 220px em 4 colunas precisam
-944px; o painel dava 650. `calcularGrade()` calcula colunas e linhas pelo
-espaco disponivel.
-
-**(f) Deducao por nome em `CriacaoScene`.** O modo edicao era deduzido do nome
-do heroi — um heroi chamado literalmente "Viajante" era lido como "sem
-personagem". Agora respeita o flag `editando` explicito.
-
-### 5. Entrada em fila do Phaser (medido, nao deduzido)
-
-`InputManager.hitTest` **nao ordena** nada; `sortGameObjects` so roda no
-`processOverEvents`. A ordem de `POINTER_DOWN` e a **ordem de insercao** em
-`input._list`. Medido num botao do modal: `[slot, capa, botao]` — o slot do
-fundo primeiro. O primeiro a chamar `stopPropagation()` cancela os seguintes
-(`processDownEvents` quebra em `_eventData.cancelled`), ou seja o
-`stopPropagation` no objeto mais antigo mata o botao que esta na frente.
-
-A solucao adotada **nao** mexe na ordem:
-
-1. `input.enabled = false` em tudo que ja estava na tela enquanto o modal abre;
-2. a `capa` do modal e criada **por ultimo**, depois dos botoes.
-
-O mesmo padrao esta documentado no README (item 16) e o defeito equivalente
-existe em `StatusScene.js:180` e `TalentosScene.js:100`, que adicionam a `capa`
-**antes** dos botoes — la, clicar em qualquer botao do modal destroi o modal
-primeiro. **Nao corrigido aqui: fora do escopo desta versao.**
-
-### 6. Testes
-
-15 casos novos em `testes/logica.mjs`, secao `== exclusao com carencia ==`:
-pendente/vencido, borda de 30 dias (ms antes e depois), `diasRestantesExclusao`
-com 0/1/muitos dias, `personagemJogavel` para heroi livre, congelado e vencido,
-o cancelamento limpando `exclusaoAgendadaEm`, a purga removendo so os vencidos,
-relogio valendo a carencia mesmo depois de `criarPersonagem`, e o estado limpo
-de `criarPersonagem`.
-
-### Verificacao em navegador
-
-Percorrido o CRUD inteiro com o `window.__game` do dev server: criar (grava e
-volta ao salao com mensagem), editar (modo edicao ativo, nome/raca/vocacao
-grava), excluir (agenda, persiste, mostra `EXCLUIXDO EM 18 DIAS`), cancelar
-(resgata), purga (some o que venceu 30 dias, com aviso), limite de 10 (11o
-heroi mostra "Limite de 10 herois atingido"), heroi congelado sem
-`ENTRAR NO MUNDO`, clique no cartao abrindo a confirmacao e `World` ativa com o
-heroi certo.

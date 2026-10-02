@@ -24,6 +24,7 @@ import {
   diasRestantesExclusao,
   personagemJogavel,
 } from '../core/progresso.js';
+import { VERSAO_EXIBIDA } from '../dados/versao.js';
 
 // =====================================================================
 // LobbyScene — o salão de seleção. É o ÚNICO destino depois do login.
@@ -692,13 +693,23 @@ export class LobbyScene extends Phaser.Scene {
     }
   }
 
+  /**
+   * Resumo das novidades para o jogador.
+   *
+   * A versão vem de `VERSAO_EXIBIDA` (que vem do `package.json`), nunca escrito
+   * à mão — a linha antiga dizia `v0.3.0` enquanto o changelog dizia `0.1.2` e
+   * o package.json `0.1.0`. Os itens estão separados por versão justamente para
+   * que uma lista única não finja que tudo é novidade do release atual.
+   */
   obterChangelogResumido() {
     return [
-      '📜 v0.3.0 — Out/2026',
+      `📜 ${VERSAO_EXIBIDA} — Out/2026`,
       '• Lobby de verdade após o login',
       '• Confirmação antes de entrar',
       '• Exclusão com carência de 30 dias',
       '• Criar e editar gravam de verdade',
+      '',
+      'v0.1.2 e anteriores',
       '• Mundo 60×44 (6× maior)',
       '• Posição persistente',
       '• Portal posicionável (Shift+P)',

@@ -19,7 +19,7 @@
 // local nesta versao do Phaser — ela SOMA a posicao do pai. Use um container de
 // agrupamento em (0, 0), que e o que o AdminScene faz.
 
-import { Math as PhaserMath, Scenes as PhaserCenas } from 'phaser';
+import Phaser from 'phaser';
 import { OURO, PERGAMINHO } from '../constants.js';
 import { caixaArredondada, botao, FONTE_UI } from './comuns.js';
 import { enviarImagem, pareceUrlDeImagem, armazenamentoDisponivel } from '../core/armazenamento.js';
@@ -114,9 +114,9 @@ function criarElementoDom(scene, { x, y, largura, altura, valor, placeholder, mu
   posicionar();
   pai.appendChild(el);
 
-  scene.scale.on(Phaser.Scale.RESIZE, posicionar);
+  scene.scale.on(Phaser.Scale.Events.RESIZE, posicionar);
   container.once('destroy', () => {
-    scene.scale.off(Phaser.Scale.RESIZE, posicionar);
+    scene.scale.off(Phaser.Scale.Events.RESIZE, posicionar);
     el.remove();
   });
   return { el, posicionar };
@@ -264,6 +264,7 @@ function campoDigitacao(scene, container, cfg) {
     .rectangle(x, y, largura, altura, 0xffffff, 0)
     .setOrigin(0, 0)
     .setInteractive({ useHandCursor: true });
+  container.add(zone);
 
   const focar = () => dom?.el?.focus();
 
@@ -752,6 +753,10 @@ function campoImagem(scene, container, cfg) {
     try {
       const url = await enviarImagem(arquivo, pastaUpload);
       aplicarUrl(url);
+      if (url && url !== (container._ultimaImagem ?? '')) {
+        container._ultimaImagem = url;
+        container.emit('imagem_atualizada', url);
+      }
       aviso.setText('Enviada. Salve o registro para gravar a URL.');
     } catch (erro) {
       aviso.setText('Falha no envio: ' + (erro?.message ?? erro));
@@ -760,8 +765,11 @@ function campoImagem(scene, container, cfg) {
   });
 
   aplicarUrl(atual);
-
-  // Foco persistente igual ao campoTexto.
+    if (atual && atual !== (container._ultimaImagem ?? '')) {
+      container._ultimaImagem = atual;
+      container.emit('imagem_atualizada', atual);
+    }
+    // Foco persistente igual ao campoTexto.
   const marcarFoco = () => {
     scene._foco = { chave, inicio: dom?.el?.selectionStart ?? 0, fim: dom?.el?.selectionEnd ?? 0 };
   };
@@ -946,7 +954,7 @@ function campoPixelArt(scene, container, cfg) {
   // Posiciona UI no DOM
   const canvas = scene.game.canvas; const pai = canvas.parentElement;
   const posicionarUI = () => { if (!pai) return; const c = canvas.getBoundingClientRect(); const p = pai.getBoundingClientRect(); uiDiv.style.left = (c.left - p.left + x + largura + 16) + 'px'; uiDiv.style.top = (c.top - p.top + y) + 'px'; uiDiv.style.zIndex = '30'; };
-  posicionarUI(); scene.scale.on(Phaser.Scale.RESIZE, posicionarUI); pai.appendChild(uiDiv);
+  posicionarUI(); scene.scale.on(Phaser.Scale.Events.RESIZE, posicionarUI); pai.appendChild(uiDiv);
 
   // Adiciona canvas zoomado ao Phaser como texture dinâmica
   const chaveTextura = 'pixelart_' + Date.now() + '_' + Math.random().toString(36).slice(2,6);
@@ -978,7 +986,7 @@ function campoPixelArt(scene, container, cfg) {
   const keydownHandler = (e) => { if (e.target.tagName === 'INPUT' || e.target.tagName === 'BUTTON') return; if (atalhos[e.key.toLowerCase()]) atalhos[e.key.toLowerCase()](); if (e.key.toLowerCase() === 'l' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); limparCanvas(); } };
   window.addEventListener('keydown', keydownHandler);
   redesenharCanvas();
-  const cleanup = () => { window.removeEventListener('keydown', keydownHandler); scene.scale.off(Phaser.Scale.RESIZE, posicionarUI); uiDiv.remove(); if (scene.textures.exists(chaveTextura)) scene.textures.remove(chaveTextura); };
+  const cleanup = () => { window.removeEventListener('keydown', keydownHandler); scene.scale.off(Phaser.Scale.Events.RESIZE, posicionarUI); uiDiv.remove(); if (scene.textures.exists(chaveTextura)) scene.textures.remove(chaveTextura); };
   const marcarFoco = () => { scene._foco = { chave, inicio: 0, fim: 0 }; };
   canvasZoom.addEventListener('click', marcarFoco);
   return { container: editorContainer, altura: Math.max(TAM * zoom + 20, 400), largura: largura, tipo: 'pixelart', chave, obter: () => { const exportCanvas = document.createElement('canvas'); exportCanvas.width = TAM; exportCanvas.height = TAM; const ctx = exportCanvas.getContext('2d'); if (!chkTransparente.checked) { ctx.fillStyle = '#1a1410'; ctx.fillRect(0,0,TAM,TAM); } ctx.putImageData(new ImageData(pixels.slice(), TAM, TAM), 0, 0); return exportCanvas.toDataURL('image/png'); }, definir(v) { if (!v || !v.startsWith('data:image')) return; const img = new Image(); img.onload = () => { const tempCanvas = document.createElement('canvas'); tempCanvas.width = TAM; tempCanvas.height = TAM; const ctx = tempCanvas.getContext('2d'); ctx.drawImage(img, 0, 0, TAM, TAM); const data = ctx.getImageData(0, 0, TAM, TAM); pixels.set(data.data); redesenharTudo(); }; img.src = v; }, chave, focar: () => { marcarFoco(); }, restaurarFoco() { marcarFoco(); return true; }, destruir: cleanup };

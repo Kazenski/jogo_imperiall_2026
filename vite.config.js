@@ -1,4 +1,12 @@
 import { defineConfig } from 'vite';
+import { createRequire } from 'node:module';
+
+// O `package.json` é a FONTE ÚNICA da versão. Ela entra no bundle por `define`
+// (ver `src/dados/versao.js`), e `testes/logica.mjs` exige que os changelogs
+// concordem com ela. Antes a versão aparecia escrita à mão em três lugares
+// diferentes — e já divergiram (`0.1.0` no package.json, `0.1.2` no
+// changelog, `0.3.0` na tela de novidades do lobby).
+const pkg = createRequire(import.meta.url)('./package.json');
 
 // GitHub Pages publica em https://<usuario>.github.io/<nome-do-repo>/
 // Se voce renomear o repo, atualize o `base` aqui.
@@ -9,6 +17,7 @@ export default defineConfig({
     // Build timestamp para forçar novo hash a cada build
     __BUILD_TIMESTAMP__: JSON.stringify(new Date().toISOString()),
     __BUILD_ID__: JSON.stringify(Math.random().toString(36).substring(7)),
+    __APP_VERSION__: JSON.stringify(pkg.version),
   },
 
   build: {

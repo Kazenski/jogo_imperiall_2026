@@ -1,6 +1,6 @@
 {
   "name": "jogo-imperiall-2026",
-  "version": "0.1.0",
+  "version": "0.1.3",
   "private": true,
   "type": "module",
   "description": "Jogo 2D medieval de construcao e sobrevivencia com Portais Arcanos entre as bases dos amigos",
