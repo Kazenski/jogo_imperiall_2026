@@ -33,6 +33,9 @@ jobs:
       - name: Instalar dependencias
         run: npm ci
 
+      - name: Limpar cache do Vite
+        run: rm -rf node_modules/.vite
+
       - name: Build
         # Vite le VITE_* do ambiente em tempo de build.
         # Sao as mesmas variaveis do .env.local. Se nao existirem no repo,
