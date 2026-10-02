@@ -1180,6 +1180,11 @@ export class AdminScene extends Phaser.Scene {
           <input type="file" accept="image/*" style="margin-bottom:6px">
           <input type="text" placeholder="ou cole a URL da imagem" value="${escaparAttr(valor ?? '')}">
           ${precisaEnviar}`;
+        // Liga os elementos. `querySelectorAll('input')` pega também o
+        // checkbox de "enviar para o Storage", então não pode ser `[1]`
+        // posicional: os dois primeiros inputs são arquivo e URL, e o
+        // checkbox (quando existe) é o terceiro.
+        const [fileEl, urlEl] = controle.querySelectorAll('input');
         fileEl.addEventListener('change', async () => {
           const arq = fileEl.files?.[0];
           if (!arq) return;

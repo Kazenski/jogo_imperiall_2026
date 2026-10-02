@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#1a1410" />
+    <meta name="description" content="Jogo Imperial — aventura 2D medieval com portais para as bases dos amigos." />
+    <title>Jogo Imperial</title>
+    <style>
+      :root {
+        --ink: #f2e6d0;
+        --gold: #d4af6a;
+        --bg: #14100c;
+      }
+
+      * { box-sizing: border-box; }
+
+      html, body {
+        margin: 0;
+        padding: 0;
+        height: 100%;
+        overflow: hidden;
+        background: var(--bg);
+        color: var(--ink);
+        font-family: 'Iowan Old Style', 'Palatino Linotype', Palatino, Georgia, serif;
+      }
+
+      #game {
+        width: 100%;
+        height: 100%;
+      }
+
+      #game canvas {
+        display: block;
+        image-rendering: pixelated;
+      }
+
+      /* Tela de carregamento antes do Phaser assumir o controle */
+      #boot {
+        position: fixed;
+        inset: 0;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 18px;
+        z-index: 10;
+        transition: opacity 0.4s ease;
+      }
+
+      #boot.oculto { opacity: 0; pointer-events: none; }
+
+      #boot h1 {
+        margin: 0;
+        font-size: clamp(28px, 6vw, 52px);
+        letter-spacing: 0.14em;
+        text-transform: uppercase;
+        color: var(--gold);
+        text-shadow: 0 2px 0 #000, 0 0 24px rgba(212, 175, 106, 0.35);
+      }
+
+      #boot p {
+        margin: 0;
+        font-size: 14px;
+        opacity: 0.75;
+        letter-spacing: 0.06em;
+      }
+
+      .barra {
+        width: min(280px, 70vw);
+        height: 6px;
+        border: 1px solid rgba(212, 175, 106, 0.4);
+        border-radius: 999px;
+        overflow: hidden;
+      }
+
+      .barra::after {
+        content: '';
+        display: block;
+        width: 40%;
+        height: 100%;
+        background: var(--gold);
+        animation: desliza 1.2s ease-in-out infinite;
+      }
+
+      @keyframes desliza {
+        0%   { transform: translateX(-100%); }
+        100% { transform: translateX(350%); }
+      }
+    </style>
+    <script type="module" crossorigin src="/jogo_imperiall_2026/assets/index-AiJpoLim.js"></script>
+    <link rel="modulepreload" crossorigin href="/jogo_imperiall_2026/assets/phaser-C88YMH86.js">
+    <link rel="modulepreload" crossorigin href="/jogo_imperiall_2026/assets/firebase-Bstnpy1R.js">
+  </head>
+  <body>
+    <!--
+      Diagnostico de deploy.
+
+      Este arquivo e a ENTRADA DE DESENVOLVIMENTO (ele aponta para /src/main.js).
+      O site publicado deve servir o build de `dist/`, onde o caminho vira
+      /jogo_imperiall_2026/assets/....
+
+      Se o GitHub Pages estiver configurado com Source = "main branch / root",
+      ele serve ESTE arquivo e o navegador pede /src/main.js, que da 404 e a tela
+      fica preta. Aqui detectamos esse caso e dizemos o que fazer, em vez de
+      deixar o jogador olhando para uma tela vazia.
+    -->
+    <script>
+      (function () {
+        var base = '/jogo_imperiall_2026/';
+        var emGithubPages = /(^|\.)github\.io$/.test(location.hostname);
+        if (!emGithubPages || location.pathname.indexOf(base) === 0) return;
+
+        var boot = document.getElementById('boot');
+        if (!boot) return;
+        boot.innerHTML =
+          '<h1>Nao foi possivel carregar o jogo</h1>' +
+          '<p>O GitHub Pages esta servindo a raiz do repositorio em vez do build.</p>' +
+          '<p>Rapos &gt; Settings &gt; Pages &gt; Build and deployment &gt; Source = <strong>GitHub Actions</strong></p>' +
+          '<p>Depois faca um novo push para o workflow publicar novamente.</p>';
+        var barra = boot.querySelector('.barra');
+        if (barra) barra.style.display = 'none';
+      })();
+    </script>
+
+    <div id="game"></div>
+
+    <div id="boot">
+      <h1>Jogo Imperial</h1>
+      <div class="barra"></div>
+      <p>forjando o reino&hellip;</p>
+    </div>
+
+  </body>
+</html>

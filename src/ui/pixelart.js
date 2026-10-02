@@ -11,7 +11,7 @@
 // 16×24 (proporção de personagem) entraria esticado no mundo. Então:
 // quadrado, 32×32, igual ao quadradinho que o jogador vê.
 
-import { CORES_PALETA } from '../dados/schemaAdmin.js';
+import { CORES_PALETA } from './paleta.js';
 
 const TAM = 32;
 

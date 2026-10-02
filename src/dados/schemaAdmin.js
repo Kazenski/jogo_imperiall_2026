@@ -202,20 +202,17 @@ function paraTexto(v) {
 // sem sobra. Escolher por família — e não por "cor bonita" — evita o problema
 // de ter dez tons de verde e nenhum cinza: o admin precisa diferencia
 // classes, e escolher duas classes com a mesma cor torna isso invisível.
-export const CORES_PALETA = [
-  // Dourado imperial (cor da casa)
-  '#f2ddb0', '#e8c87a', '#d4af6a', '#bb8f45', '#9a7130', '#7a5822',
-  // Verde
-  '#cfe6a8', '#a8cf72', '#7ba23f', '#5d8029', '#43611b', '#2c440f',
-  // Azul
-  '#bcdcf5', '#8cc0ea', '#4a90d9', '#2f6ea8', '#1d4d78', '#0f2f4a',
-  // Roxo
-  '#ddbde8', '#c394d0', '#8a4a9c', '#6b3579', '#4d2259', '#33133b',
-  // Vermelho
-  '#f5b8b8', '#e08a8a', '#c94a5a', '#a63441', '#7f222c', '#5a151c',
-  // Neutros (cinzas, branco e preto)
-  '#ffffff', '#d9dee3', '#a8b2bc', '#6b7680', '#3d454d', '#141619',
-];
+//
+// A paleta mora em `ui/paleta.js` e é reexportada aqui por compatibilidade.
+// NÃO defina a paleta neste arquivo: `ui/pixelart.js` precisa dela, e mantê-la
+// aqui criava o ciclo
+//
+//     AdminScene -> pixelart.js -> schemaAdmin.js -> ...
+//
+// que fazia `CAMPOS_CLASSSE` chegar `undefined` no navegador — a aba Classes
+// abria em branco e nenhuma outra aba junto. A suíte em Node passava, porque a
+// ordem de resolução de módulos ES difere da do Vite. Ver `ui/paleta.js`.
+export { CORES_PALETA } from '../ui/paleta.js';
 
 // =====================================================================
 // DICIONÁRIO DE EFEITOS — nome e descrição de cada atributo
