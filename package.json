@@ -8,7 +8,13 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "test": "node testes/logica.mjs"
+    "test": "node testes/logica.mjs",
+    "test:painel": "node testes/painel.mjs",
+    "test:chunks": "node testes/chunks.mjs",
+    "test:terreno": "node testes/terreno.mjs",
+    "test:integridade": "node testes/integridade.mjs",
+    "test:storage": "firebase emulators:exec --only auth,firestore,storage --project demo-jogo \"node testes/storage-regras.mjs\"",
+    "test:tudo": "npm run test && npm run test:painel && npm run test:chunks && npm run test:terreno && npm run test:integridade"
   },
   "dependencies": {
     "firebase": "^12.19.0",

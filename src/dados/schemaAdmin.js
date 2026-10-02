@@ -142,6 +142,45 @@ const parseLoot = (v) =>
     })
     .filter((l) => l.itemId);
 
+/**
+ * "bauId:itemId:chance:qtd" -> loot de baú, agrupado por baú.
+ *
+ * Agrupa em vez de devolver uma lista solta porque o baú é a unidade que o
+ * mundo espalha: `chanceBaus` diz com que frequência um baú aparece, e
+ * `conteudoBaus` diz o que há dentro de CADA TIPO. Achatar as duas coisas em
+ * um campo só faria o admin repetir a lista de baús para cada um.
+ *
+ * Exemplo:
+ *   bau_comum:pedra:70:4, bau_comum:ferro:30:2
+ *   bau_rare:pocao_vida:25:1, bau_rare:espada_ferro:5:1
+ */
+const parseConteudoBaus = (v) => {
+  const porBau = new Map();
+  for (const parte of String(v ?? '').split(/[|,\n]/)) {
+    const p = parte.trim();
+    if (!p) continue;
+    const [bauId, itemId, chance, qtd] = p.split(':');
+    const b = (bauId ?? '').trim();
+    const i = (itemId ?? '').trim();
+    if (!b || !i) continue;
+    if (!porBau.has(b)) porBau.set(b, []);
+    porBau.get(b).push({
+      itemId: i,
+      chance: Number(chance) || 0,
+      qtdMin: 1,
+      qtdMax: Math.max(1, Number(qtd) || 1),
+    });
+  }
+  return [...porBau.entries()].map(([bauId, itens]) => ({ bauId, itens }));
+};
+
+/** Volta o loot de baú para texto, grouped por baú. */
+const textoConteudoBaus = (v) =>
+  (Array.isArray(v) ? v : [])
+    .map((b) => (b.itens ?? []).map((i) => `${b.bauId}:${i.itemId}:${i.chance}:${i.qtdMax}`).join(', '))
+    .filter(Boolean)
+    .join(', ');
+
 /** "item:qtd" -> lista de ingredientes. */
 const parseListaQtd = (v) =>
   String(v ?? '')
@@ -667,6 +706,9 @@ export const CAMPOS_CHUNK = [
     dica: 'Com "não", o chunk acrescenta recursos e mobs ao que o bioma já põe. Com "sim", o vale só.' },
 
   // ---- Terreno ----
+  { chave: 'blocosNativos', rotulo: 'Blocos nativos', tipo: 'multiselec',
+    opcoes: [], fonte: 'blocos',
+    dica: 'Os blocos que PERTENCEM a este chunk. É a lista que o jogo consulta para saber o que existe aqui de propósito — os blocos de superfície e de subsolo abaixo são camadas do terreno, esta lista é o conteúdo. Serve para receitas, localization e para o bioma assumir o que o chunk não declarar.' },
   { chave: 'blocosSuperficie', rotulo: 'Blocos de superfície', tipo: 'multiselec',
     opcoes: [], fonte: 'blocos',
     dica: 'A casca de cima. Se vários, o computador sorteia entre eles com o peso de cada bloco.' },
@@ -703,6 +745,24 @@ export const CAMPOS_CHUNK = [
   { chave: 'estacoes', rotulo: 'Estações', tipo: 'multiselec',
     opcoes: [], fonte: 'estacoes',
     dica: 'Estações de processo que aparecem aqui (sopradora, forja, farms...).' },
+
+  // ---- Baús ----
+  { chave: 'baus', rotulo: 'Tipos de baú', tipo: 'multiselec', opcoes: [], fonte: 'baus',
+    dica: 'Quais baús aparecem aqui. Só entram itens marcados como bau no cadastro de Itens (tipo = bau, ou uso contendo bau).' },
+  { chave: 'chanceBaus', rotulo: 'Chance de baús', tipo: 'numero',
+    dica: '0 a 1. Chance de um baú aparecer em cada bloco candidato. Baixa e rara.' },
+  { chave: 'quantidadeBaus', rotulo: 'Máximo de baús por chunk', tipo: 'numero',
+    dica: 'Trava o pior caso. Com 1024 blocos e chance 0,02, saem ~20 baús — muito para umChunk só.' },
+  { chave: 'conteudoBaus', rotulo: 'Conteúdo dos baús', tipo: 'area',
+    placeholder: 'bau_comum:pedra:70:4, bau_comum:ferro:30:2\nbau_rare:pocao_vida:25:1',
+    dica: 'bauId:itemId:chance:quantidade. Uma linha por baú. A chance é de 0 a 100 e vale por item, dentro daquele baú.',
+    parse: parseConteudoBaus },
+
+  // ---- Itens soltos no chão ----
+  { chave: 'itensChao', rotulo: 'Itens no chão', tipo: 'multiselec', opcoes: [], fonte: 'itens',
+    dica: 'Itens largados no terreno, que o jogador pega andando. Diferente de baú: não tem como abrir, é só pegar.' },
+  { chave: 'densidadeItensChao', rotulo: 'Densidade de itens no chão', tipo: 'numero',
+    dica: '0 a 1. Itens por bloco. Acima de 0.05 o chão fica cheio de tralha.' },
 
   // ---- Para o jogador ----
   { chave: 'podeConstruir', rotulo: 'Pode construir base', tipo: 'select',
@@ -791,6 +851,7 @@ export const serializadores = {
   efeitos: efeitosTexto,
   bonusPorNivel: efeitosTexto,
   preRequisitoNiveis: efeitosTexto,
+  conteudoBaus: textoConteudoBaus,
 };
 
 export { paraTexto };

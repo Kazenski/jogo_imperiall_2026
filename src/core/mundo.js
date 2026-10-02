@@ -507,6 +507,241 @@ export function gerarMundoEmChunks(reino, chunks, seedExtra = '') {
   return { cols, linhas, tamanho, celulas };
 }
 
+// =====================================================================
+// TERRENO — o que o jogador cava
+// =====================================================================
+//
+// Aqui o terreno vira dado de verdade. A ideia é simples de explicar e
+// importante de deixar registrada:
+//
+//   A coluna é o eixo X. A LINHA é a PROFUNDIDADE, não a altura.
+//
+// Uma coluna tem a superfície numa linha (`altura`) e, abaixo dela, `profundidade`
+// camadas de solo. Acima da superfície é céu. O jogador cava para BAIXO, que é
+// o gesto que o jogo inteiro convida a fazer — e o que a altura do chunk
+// modulates, porque onde a superfície é mais alta há mais terra para cavar.
+//
+// Por que não "caminhar sobre o morro" (o Starbound literal):
+//
+//   O jogo é top-down com movimento livre nas 8 direções, sem gravidade. Não
+//   existe chão para o jogador pisar — ele passa por cima de tudo, e o único
+//   colisor do mundo são 60 árvores decorativas. Dar relevo caminhável exige
+//   inventar gravidade, pulo, colisão e reescrever o input: é trocar o jogo,
+//   não o mapa. Já cavar e coletar cabe no que existe, porque cavar é REMOVER
+//   uma célula da grade — e a grade é a mesma que a base já usa.
+//
+// Consequência que vale assumir: o relevo é vertical para BAIXO. A coluna mais
+// alta não é um morro que se sobe, é uma coluna de terra mais alta. Visualmente
+// o degrau entre colunas é desenhado como uma parede de terra, que é exatamente
+// o que o jogador espera ver.
+
+/** Chave de célula do terreno. Mesma gramática da base: "x,y". */
+export const chaveCelula = (x, y) => `${x},${y}`;
+
+/**
+ * Constrói a grade de terreno do mundo.
+ *
+ * @param {object} reino
+ * @param {Array}  chunks  chunks do mundo (pode ser vazio)
+ * @param {object} [opcoes]
+ * @param {number} [opcoes.largura]  em blocos
+ * @param {number} [opcoes.altura]   em linhas (a profundidade máxima do mundo)
+ * @param {string} [opcoes.seed]
+ * @returns {Map<string, {x:number,y:number,itemId:string,camada:string}>}
+ *
+ * Só as células CHEIAS entram no mapa. O vazio é ausência de chave, não um
+ * objeto `{vazio:true}`: cavar é `delete`, e o mapa encolhe conforme o jogador
+ * cava em vez de crescer com entradas nulas.
+ */
+export function gerarTerrenoMundo(reino, chunks = [], opcoes = {}) {
+  const largura = Math.max(1, Number(opcoes.largura) || Number(reino?.largura) || 60);
+  const altura = Math.max(1, Number(opcoes.altura) || Number(reino?.altura) || 44);
+  const seed = opcoes.seed ?? 'local';
+
+  const doMundo = (chunks ?? []).filter((c) => !c?.mundoId || c.mundoId === reino?.id);
+  const porCelula = indexarChunks(doMundo);
+  const candidatos = doMundo.filter((c) => c?.mundoId === reino?.id);
+
+  const celulas = new Map();
+
+  for (let cx = 0; cx < Math.ceil(largura / TAMANHO_CHUNK_PADRAO); cx += 1) {
+    for (let cy = 0; cy < Math.ceil(altura / TAMANHO_CHUNK_PADRAO); cy += 1) {
+      const chunk = porCelula.has(`${cx},${cy}`)
+        ? chunkVigente(porCelula, cx, cy)
+        : sorteiaChunk(candidatos, criarRng(`${reino?.seedBase ?? 'reino'}:${seed}:${cx},${cy}`));
+      if (!chunk) continue;
+
+      const colunas = gerarTerreno(chunk, TAMANHO_CHUNK_PADRAO);
+      const x0 = chunkParaBloco(cx);
+      const y0 = chunkParaBloco(cy);
+
+      for (const col of colunas) {
+        const x = x0 + col.x;
+        if (x >= largura) continue;
+
+        // Superfície: em (alturaBase + altura da coluna), se couber na tela.
+        const ySuperficie = y0 + col.altura;
+        if (col.superficie && ySuperficie < altura) {
+          celulas.set(chaveCelula(x, ySuperficie), {
+            x,
+            y: ySuperficie,
+            itemId: col.superficie,
+            camada: 'superficie',
+          });
+        }
+
+        // Subsolo: as `profundidade` linhas ABAIXO da superfície.
+        //
+        // A profundidade é a mesma da coluna, e não umarola só: um veio de
+        // ferro que só existe na camada 2 precisa estar na camada 2 em todas as
+        // colunas, senão o jogador cava para baixo e o veio muda de profundidade
+        // de coluna para coluna — e não acha.
+        const fundo = Math.min(altura - 1, ySuperficie + Math.max(0, col.profundidade));
+        for (let y = ySuperficie + 1; y <= fundo; y += 1) {
+          if (!col.subsolo) break;
+          celulas.set(chaveCelula(x, y), { x, y, itemId: col.subsolo, camada: 'subsolo' });
+        }
+      }
+    }
+  }
+
+  return celulas;
+}
+
+/**
+ * Aplica as escavações e construções do jogador por cima do terreno gerado.
+ *
+ * O terreno é PROCEDURAL: ele vem da semente, todo mundo gera o mesmo. O que o
+ * jogador faz é um SOBREPÕS de exceções — e é só isso que vai para o Firestore.
+ *
+ * Guardar a grade inteira seria centenas de milhares de caracteres por conta e totalmente
+ * redundante: bastam as células que mudaram.
+ *
+ * @param {Map} celulas  terreno gerado (é modificado no lugar)
+ * @param {object} alterado  `{ "x,y": itemId | null }` do perfil do jogador
+ * @returns {number} quantas ENTRADAS do perfil foram aplicadas
+ *
+ * Contar entradas aplicadas, e não células que mudaram de estado: a segunda
+ * contagem depende de o terreno procedural já ter a célula, e o terreno muda
+ * quando um chunk é cadastrado. O número que o painel quer mostrar é "quantas
+ * escavações minhas estão aqui", que é o tamanho do registro do jogador.
+ */
+export function aplicarAlteracoesTerreno(celulas, alterado) {
+  let quantas = 0;
+  for (const [chave, itemId] of Object.entries(alterado ?? {})) {
+    const [x, y] = chave.split(',').map(Number);
+    if (!Number.isFinite(x) || !Number.isFinite(y)) continue;
+
+    if (itemId === null || itemId === undefined) {
+      // `null` = cavado. A célula some do mapa. Não importa se já tinha sumido:
+      // o registro do jogador é a verdade, não o estado do procedural.
+      celulas.delete(chave);
+    } else {
+      celulas.set(chave, { x, y, itemId, camada: 'jogador' });
+    }
+    quantas += 1;
+  }
+  return quantas;
+}
+
+/**
+ * Cava uma célula. Devolve o bloco removido, ou null se não havia nada.
+ *
+ * Não apaga em `alterado`: quem decide o que é permanente é o `salvarTerreno`
+ * do jogador, e escavar e voltar atrás (sem custo) é o que torna a escavação
+ * reversível sem bureaucracy.
+ */
+export function escavarCelula(celulas, x, y) {
+  const chave = chaveCelula(x, y);
+  const celula = celulas.get(chave);
+  if (!celula) return null;
+  celulas.delete(chave);
+  return celula;
+}
+
+/** Coloca um bloco numa célula vazia. Devolve a célula, ou null se estava cheia. */
+export function colocarCelula(celulas, x, y, itemId) {
+  const chave = chaveCelula(x, y);
+  if (celulas.has(chave)) return null;
+  const celula = { x, y, itemId, camada: 'jogador' };
+  celulas.set(chave, celula);
+  return celula;
+}
+
+/**
+ * Baús e itens no chão que o chunk manda, já com o loot sorteado.
+ *
+ * O loot é sorteado na generation, e não na hora de abrir: um baú tem que ter
+ * o MESMO conteúdo para o mesmo mundo, ou o jogador abre duas vezes e leva
+ * coisas diferentes. Isso é o que `conteudoBaus` faz — a chance é avaliada uma
+ * vez só, aqui.
+ */
+export function espalharBausEItens(chunk, tamanho = TAMANHO_CHUNK_PADRAO, seedExtra = '') {
+  const x0 = chunkParaBloco(Number(chunk?.posX) || 0);
+  const y0 = chunkParaBloco(Number(chunk?.posY) || 0);
+
+  const baus = chunk?.baus ?? [];
+  const chance = limitar(Number(chunk?.chanceBaus) || 0, 0, 1);
+  const maximo = Math.max(0, Number(chunk?.quantidadeBaus) || 0);
+
+  const lootPorBau = new Map(
+    (Array.isArray(chunk?.conteudoBaus) ? chunk.conteudoBaus : []).map((b) => [
+      b.bauId,
+      Array.isArray(b.itens) ? b.itens : [],
+    ]),
+  );
+
+  const listaBaus = [];
+  if (baus.length && chance > 0 && maximo > 0) {
+    const rng = criarRng(sementeDoChunk(chunk, `baus:${seedExtra}`));
+    const area = tamanho * tamanho;
+    for (let i = 0; i < area && listaBaus.length < maximo; i += 1) {
+      if (rng() >= chance) continue;
+      const bauId = escolher(rng, baus);
+      if (!bauId) continue;
+      listaBaus.push({
+        bauId,
+        x: x0 + inteiro(rng, 0, tamanho - 1),
+        y: y0 + inteiro(rng, 0, tamanho - 1),
+        itens: sortearLoot(lootPorBau.get(bauId) ?? [], rng),
+        aberto: false,
+      });
+    }
+  }
+
+  const itensChao = chunk?.itensChao ?? [];
+  const densItens = limitar(Number(chunk?.densidadeItensChao) || 0, 0, 1);
+  const listaChao = [];
+  if (itensChao.length && densItens > 0) {
+    const rng = criarRng(sementeDoChunk(chunk, `itensChao:${seedExtra}`));
+    const total = Math.round(tamanho * tamanho * densItens);
+    for (let i = 0; i < total; i += 1) {
+      listaChao.push({
+        itemId: escolher(rng, itensChao),
+        qtd: inteiro(rng, 1, 3),
+        x: x0 + inteiro(rng, 0, tamanho - 1),
+        y: y0 + inteiro(rng, 0, tamanho - 1),
+      });
+    }
+  }
+
+  return { baus: listaBaus, itensChao: listaChao };
+}
+
+/** Sorteia o conteúdo de um baú. `chance` é de 0 a 100. */
+export function sortearLoot(itens, rng) {
+  const sorteados = [];
+  for (const entrada of itens ?? []) {
+    if (!entrada?.itemId) continue;
+    if (rng() * 100 >= limitar(Number(entrada.chance) || 0, 0, 100)) continue;
+    sorteados.push({
+      itemId: entrada.itemId,
+      qtd: inteiro(rng, entrada.qtdMin ?? 1, entrada.qtdMax ?? 1),
+    });
+  }
+  return sorteados;
+}
+
 // ---------- selecao de reino ----------
 
 /** Escolhe o reino de entrada de um jogador: o primeiro acessivel. */

@@ -5,7 +5,18 @@
 // O que existe no Firestore apenas SOBREPOE a semente (por `id`), entao o
 // admin consegue ajustar um item existente sem perder o resto do mundo.
 
-import { repoItens, repoClasses, repoSkills, repoRecipes, repoMonstros, repoWorldTemplates, repoAchievements } from './repos.js';
+import {
+  repoItens,
+  repoClasses,
+  repoSkills,
+  repoRecipes,
+  repoMonstros,
+  repoWorldTemplates,
+  repoAchievements,
+  repoChunks,
+  repoNPCs,
+  repoBiomas,
+} from './repos.js';
 import { SEMENTE } from '../dados/semente.js';
 import { firebaseDisponivel } from './firebase.js';
 
@@ -17,6 +28,12 @@ const FONTES = {
   monsters: repoMonstros,
   worldTemplates: repoWorldTemplates,
   achievements: repoAchievements,
+  // O terreno do mundo é gerado a partir dos chunks, então o mundo PRECISA
+  // deles. Sem esta linha o gerador receberia uma lista vazia e o reino
+  // apareceria sem chão nenhum.
+  chunks: repoChunks,
+  npcs: repoNPCs,
+  biomas: repoBiomas,
 };
 
 function mesclar(registros, semente) {
@@ -111,6 +128,9 @@ export async function carregarCatalogo({ forcar = false } = {}) {
     monsters: indexar(catalogo.monsters),
     worldTemplates: indexar(catalogo.worldTemplates),
     achievements: indexar(catalogo.achievements),
+    chunks: indexar(catalogo.chunks),
+    npcs: indexar(catalogo.npcs),
+    biomas: indexar(catalogo.biomas),
   };
 
   catalogo.avisos = avisos;

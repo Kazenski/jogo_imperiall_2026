@@ -11,6 +11,158 @@ Formato inspirado em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/)
 
 ---
 
+## [0.1.3] — Terreno cavavel, chunks no painel e integridade de conta
+
+*Outubro de 2026*
+
+### 1. O mapa nao tinha mapa
+
+Antes de mexer em "chunks", a primeira coisa foi conferir o que existia. O
+resultado muda o tamanho do trabalho:
+
+- `WorldScene` tem `COLUNAS`/`LINHAS`/`LARGURA_TILEMAP`, mas **nao ha tilemap**.
+  `this.chao` e um `tileSprite` com `setScrollFactor(0)`: um padrao de fundo
+  repetido, nao uma grade.
+- Nao ha terreno, nem relevo, nem parede. Os nos de recurso sao `Image` soltos e
+  as 60 arvores sao sorteadas por `hashSimples`.
+- O unico colisor do mundo inteiro sao as arvores (`WorldScene.js:289`).
+  Nao ha `physics.world.setBounds`.
+
+Ou seja: nao havia mapa para comecar a mexer. **Cavar e construir entraram como
+construcao, nao como refatoracao.**
+
+### 2. A linha do terreno e PROFUNDIDADE, nao altura
+
+Decisao central, porque o jogo e top-down com movimento livre nas 8 direcoes e
+**sem gravidade**: nao existe chao para o jogador pisar. Dar relevo caminhavel
+exigiria inventar pulo, colisao e reescrever o input — trocar o jogo, nao o mapa.
+
+O que da para fazer no que existe e ja valia: a coluna e o eixo X, e a LINHA e
+a PROFUNDIDADE. Acima da superficie e ceu; abaixo, `profundidade` camadas de
+solo. Cavar e REMOVER uma celula — e a grade e a mesma que a base ja usava
+(`base.blocos`, `chaveBloco`).
+
+`core/mundo.js`:
+- `gerarTerrenoMundo(reino, chunks, opcoes)` -> `Map<"x,y", celula>`
+- `aplicarAlteracoesTerreno`, `escavarCelula`, `colocarCelula`
+- `espalharBausEItens`, `sortearLoot`
+
+### 3. Terreno procedural + sobreposicao do jogador
+
+O terreno vem da semente (todo mundo ve o mesmo). O perfil guarda **so** as
+celulas que o jogador mudou (`estado.terrenoCavado`): `null` = cavado, `itemId` =
+colocado. Guardar a grade inteira seria centenas de milhares de caracteres por
+conta e redundante — o procedural ja esta no seed.
+
+Consequencia de projeto, registrada de proposito: **redesenhar um chunk no
+painel apaga os buracos antigos**, porque o registro do jogador e uma sobreposicao
+e nao uma edicao do procedural. E o comportamento esperado de quem redesenha o
+mundo.
+
+### 4. Cada celula e uma Image, nao um retangulo de um Graphics
+
+`Graphics` tem **uma** profundidade. Com um `Graphics` so para o terreno, um
+bloco de subsolo ficaria sempre atras ou sempre na frente do jogador, conforme o
+jogador estivesse acima ou abaixo da linha do chao — a "entrar no terreno" some.
+Com um objeto por celula e `setDepth(y)`, o jogador desce para dentro do buraco.
+
+Custo: ~600 `Image` para um mundo de 60x44. Atualizacao **incremental**: escavar
+destroi uma imagem e colocar cria uma. Redesenhar 600 imagens por toque daria um
+engasgo visivel.
+
+### 5. `soltar()` estourava dentro do Phaser
+
+`create()` e async (carrega o catalogo) e o Phaser ja entrega eventos de ponteiro.
+Um `pointerup` que chegasse antes de `criarJogador` rodava `cam.startFollow(null)`
+e o erro era `Cannot read properties of null (reading 'x')`, **dentro da
+biblioteca** — sem nenhuma pista da causa. Guarda adicionada.
+
+### 6. Dois bugs de gameplay que estavam la ha tempo
+
+- `derrubarBloco` chamava `derrubarBlocoDaBase(estado, catalogo, col, linha)` com
+  quatro argumentos posicionais, mas a funcao le **um objeto**. `estado` chegava
+  `undefined` e `estado.base` estourava `TypeError`. Quebrado desde a mudança de
+  assinatura.
+- Construir **nunca funcionou**: `InventarioScene` escrevia `blocoSelecionado` em
+  si mesma e era destruida ao fechar, e o botao "Construir com este" so aparecia
+  em `tipo === 'ferramenta'` — ou seja, numa picareta, nunca num bloco. Agora
+  emite `bloco-selecionado` para o World, e o botao aparece em `tipo === 'bloco'`
+  ou uso `estrutura`.
+
+### 7. `acaoConstruir` comia o bloco e nao colocava nada
+
+A ordem era: verificar o resultado e so entao consumir. Mirando numa celula
+ocupada — o que e a primeira coisa que se faz num mundo cheio de terra — o
+jogador perdia o bloco sem ganhar nada. Agora verifica antes de consumir.
+
+### 8. Cycle de import: a paleta
+
+`ui/pixelart.js` importava `CORES_PALETA` de `dados/schemaAdmin.js`. O ciclo
+`AdminScene -> pixelart -> schemaAdmin` devolvia `undefined` para um `export
+const` no navegador (o Vite resolve ciclos diferente do Node), e a aba Classes
+abria em branco. A paleta foi para `ui/paleta.js`, sem volta.
+`testes/painel.mjs` detecta ciclos estaticamente.
+
+### 9. Regra de Storage: `match` aninhado NAO herda
+
+`allow read: if true` no nivel do bucket, com um `match /{allPaths=**}` dentro
+só com `allow write`. Regra de Storage **substitui** a do pai nos caminhos que
+casa — nao soma. Resultado: leitura negada para todo arquivo, e nenhuma imagem do
+jogo carregava. As duas permissoes agora vivem no mesmo `match`.
+`testes/storage-regras.mjs` roda contra os emuladores com as regras reais.
+
+### 10. Integridade conta <-> personagem
+
+`LoginScene` importava `garantirPerfil` de `core/progresso.js` (grava em
+`jogadores`) em vez de `garantirPerfilUsuario` de `core/usuarios.js` (grava em
+`users`): `users` ficava vazio e a aba Jogadores nao mostrava ninguem.
+
+Depois, o mesmo arquivo passou a mandar ao salao o perfil de `users`, que nao tem
+`personagens` — a lista vinha vazia sempre.
+
+E o grave: `carregarPerfilJogador` devolvia um perfil **inventado** quando a
+leitura falhava ou passava do timeout, e `salvarPerfil` grava o objeto inteiro com
+`merge: true`. Um perfil vazio traz `personagens: []`, entao
+
+    ler (falhou) -> perfil vazio -> salvarPerfil -> personagens: []
+
+**apagava de verdade** os herois que existiam no Firestore. Agora a funcao lanca
+`PerfilIlegivelError`, e o salao distingue "nao tem heroi" de "nao consegui ler".
+
+`testes/integridade.mjs` trava esse contrato.
+
+### 11. Arquivos
+
+| Arquivo | Mudanca |
+|---|---|
+| `core/mundo.js` | geracao de terreno, heightmap, chunks, baus |
+| `scenes/WorldScene.js` | terreno, escavar, colocar, baus, mira na grade |
+| `scenes/InventarioScene.js` | emite `bloco-selecionado` para o World |
+| `scenes/LoginScene.js` | dois perfis separados, `perfilJogador` vs `perfilUsuario` |
+| `core/progresso.js` | `PerfilIlegivelError`, escrita sem engole falha |
+| `core/catalogo.js` | chunks, npcs e biomas entram no catalogo |
+| `core/personagem.js` | `estado.terrenoCavado` |
+| `dados/schemaAdmin.js` | `CAMPOS_CHUNK` (36 campos), `parseConteudoBaus` |
+| `scenes/AdminScene.js` | aba Chunks, mapa de chunks, fonte `baus` |
+| `core/repos.js` | `repoChunks` |
+| `firestore.rules` / `storage.rules` | colecoes novas, leitura/escrita no mesmo match |
+| `ui/paleta.js` | paleta movida (quebra o ciclo) |
+
+### 12. Testes
+
+| Arquivo | Cobre |
+|---|---|
+| `testes/terreno.mjs` | grade, profundidade, escavar, colocar, sobreposicao, baus |
+| `testes/chunks.mjs` | grade em chunk, sorteio por peso, determinismo |
+| `testes/painel.mjs` | ciclos, esquema orfao, tipos de campo, `fileEl` |
+| `testes/integridade.mjs` | os dois perfis, leitura falha != vazio |
+| `testes/storage-regras.mjs` | regras do Storage no emulador |
+| `teste-terreno.html` | sobe a `WorldScene` sem login, para ver o terreno |
+
+`npm run test:tudo` roda as quatro suites de Node.
+
+---
+
 ## [0.1.3] — Lobby como hub, CRUD real e exclusao com carencia
 
 *Outubro de 2026*

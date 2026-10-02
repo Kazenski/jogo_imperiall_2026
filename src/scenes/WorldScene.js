@@ -35,6 +35,14 @@ import {
   reinoInicial,
   chaveBloco,
   TAMANHO_BLOCO,
+  TAMANHO_CHUNK_PADRAO,
+  gerarTerrenoMundo,
+  aplicarAlteracoesTerreno,
+  escavarCelula,
+  colocarCelula,
+  chaveCelula,
+  espalharBausEItens,
+  chunkParaBloco,
 } from '../core/mundo.js';
 import { VELOCIDADE, OURO, PERGAMINHO } from '../constants.js';
 import {
@@ -112,6 +120,7 @@ export class WorldScene extends Phaser.Scene {
     this.criarCamera();
     this.criarJogador();
     this.criarMundo();
+    this.criarTerreno();
     this.criarBase();
     this.criarPortal();
     this.criarHud();
@@ -124,6 +133,16 @@ export class WorldScene extends Phaser.Scene {
     this.atalhos();
     this.syncBaseVisivel();
     this.atualizarDerivados();
+
+    // Aviso do terreno, AQUI e não dentro de `criarTerreno`.
+    //
+    // `mostrarToast` escreve em `this.toast`, que só existe depois de
+    // `criarHud`. Chamar antes derruba o `create` inteiro e o jogador fica
+    // olhando uma tela preta — e foi exatamente o que aconteceu na primeira
+    // versão, num mundo sem chunks.
+    if (this.terreno?.size === 0) {
+      this.mostrarToast('Nenhum chunk cadastrado: o mundo esta liso. Cadastre na aba Chunks.', 4200);
+    }
 
     this.carregando.destroy();
     this.pronto = true;
@@ -215,6 +234,12 @@ export class WorldScene extends Phaser.Scene {
       this.arrastando = false;
       // Volta a seguir o jogador, mas so se o arrasto nao foi lento demais
       // para ser construed como clique.
+      // `create()` é async (carrega o catálogo) e o Phaser já entrega eventos
+      // de ponteiro. Um `pointerup` que chegue antes de `criarJogador` roda
+      // isto com `this.jogador` nulo, e `startFollow(null)` estoura DENTRO do
+      // Phaser com "Cannot read properties of null (reading 'x')" — erro de
+      // biblioteca que não diz nada sobre a causa.
+      if (!this.jogador) return;
       cam.startFollow(this.jogador, true, 0.12, 0.12);
       cam.setDeadzone(220, 140);
     };
@@ -292,6 +317,204 @@ export class WorldScene extends Phaser.Scene {
     this.monstros = [];
     this.imagensMonstro = new Map();
     this.gerarMonstros();
+  }
+
+  // =====================================================================
+  // TERRENO — a grade que o jogador cava
+  // =====================================================================
+  //
+  // O terreno é PROCEDURAL: `gerarTerrenoMundo` devolve a grade a partir da
+  // semente do chunk, e o perfil do jogador entra só como sobreposição das
+  // células que ele mudou. Nada de guardar a grade no Firestore.
+  //
+  // Cada célula é um `Image` com `setDepth(y)`, e não um retângulo de um
+  // `Graphics` só. Isso custa 400 objetos, e é o que dá a sobreposição certa:
+  // um `Graphics` tem UMA profundidade, então um bloco de subsolo ficaria
+  // sempre atrás ou sempre na frente do jogador, conforme o jogador estivesse
+  // acima ou abaixo da linha do chão. Com um objeto por célula, o jogador
+  // "entra" no terreno ao descer, que é o efeito que dá a sensação de buraco.
+  //
+  // A ATUALIZAÇÃO É INCREMENTAL. Escarar destrói uma imagem e coloca uma
+  // imagem; não redesenha o chunk. Redesenhar 400 imagens a cada escavação
+  // daria um engasgo visível a cada toque.
+
+  criarTerreno() {
+    this.imagensTerreno = new Map();
+
+    const chunks = this.catalogo?.chunks ?? [];
+    this.terreno = gerarTerrenoMundo(this.reinoAtual, chunks, {
+      largura: COLUNAS,
+      altura: LINHAS,
+      seed: this.uid ?? 'local',
+    });
+
+    // A escavação do jogador vem por cima do procedural. Precisa ser um objeto
+    // próprio: se o perfil veio de uma versão antiga do save, `terrenoCavado`
+    // é undefined e escrever nele quebraria.
+    this.estado.terrenoCavado ??= {};
+    aplicarAlteracoesTerreno(this.terreno, this.estado.terrenoCavado);
+
+    for (const celula of this.terreno.values()) {
+      this.criarImagemTerreno(celula);
+    }
+
+    // Sem chunks cadastrados o terreno sai vazio, e o jogador cairia num
+    // mundo sem chão. O aviso é dado no fim do `create`, quando o HUD já
+    // existe — ver a nota lá.
+    this.desenharBausEItens();
+  }
+
+  /** Cria a imagem de uma célula do terreno. */
+  criarImagemTerreno(celula) {
+    const def = buscarItem(this.catalogo, celula.itemId);
+    if (!def) return;
+
+    const img = this.add
+      .image(celula.x * TAMANHO, (celula.y + 1) * TAMANHO, this.texturaDoItem(def))
+      .setOrigin(0.5, 1)
+      .setTint(def.cor ?? 0xffffff)
+      .setDepth(celula.y * TAMANHO);
+
+    img.setData('celula', celula);
+    img.setData('chave', chaveCelula(celula.x, celula.y));
+    this.imagensTerreno.set(img.getData('chave'), img);
+  }
+
+  /**
+   * Baús e itens largados no chão, vindos do chunk.
+   *
+   * O loot do baú já vem sorteado: um baú precisa ter o MESMO conteúdo para
+   * todo mundo e para sempre, senão o jogador abre duas vezes e ganha
+   * coisas diferentes — o que é a forma mais rápida de fabricar_item bug.
+   */
+  desenharBausEItens() {
+    this.imagensBau = new Map();
+    this.imagensItemChao = new Map();
+
+    const chunks = this.catalogo?.chunks ?? [];
+    for (const chunk of chunks) {
+      if (chunk?.mundoId && chunk.mundoId !== this.reinoAtual?.id) continue;
+      const espalha = espalharBausEItens(chunk, TAMANHO_CHUNK_PADRAO);
+
+      for (const bau of espalha.baus) {
+        // Não põe baú dentro da terra: um baú soterrado é inacessível, e o
+        // jogador não tem como saber que existe.
+        if (this.terreno.has(chaveCelula(bau.x, bau.y))) continue;
+        const def = buscarItem(this.catalogo, bau.bauId);
+        if (!def) continue;
+        const img = this.add
+          .image(bau.x * TAMANHO, (bau.y + 1) * TAMANHO, this.texturaDoItem(def))
+          .setOrigin(0.5, 1)
+          .setTint(def.cor ?? 0xd4af6a)
+          .setDepth(bau.y * TAMANHO - 1)
+          .setInteractive({ useHandCursor: true });
+        img.setData('bau', bau);
+        this.imagensBau.set(chaveCelula(bau.x, bau.y), img);
+      }
+
+      for (const item of espalha.itensChao) {
+        if (this.terreno.has(chaveCelula(item.x, item.y))) continue;
+        const def = buscarItem(this.catalogo, item.itemId);
+        if (!def) continue;
+        const img = this.add
+          .image(item.x * TAMANHO, (item.y + 1) * TAMANHO, this.texturaDoItem(def))
+          .setOrigin(0.5, 1)
+          .setTint(def.cor ?? 0xffffff)
+          .setDepth(item.y * TAMANHO - 1)
+          .setInteractive({ useHandCursor: true });
+        img.setData('itemChao', item);
+        this.imagensItemChao.set(chaveCelula(item.x, item.y), img);
+      }
+    }
+  }
+
+  /**
+   * Esvara a célula sob a mira. Devolve o bloco retirado.
+   *
+   * Cava é REMOVER a célula da grade. O que o jogador ganhou fica no
+   * inventário, e a "marcatura" da escavação é gravada no perfil como `null`
+   * — para que o buraco continue lá quando ele voltar, e desapareça se o
+   * chunk for reescrito no painel (que é o que se espera: quem redesenha o
+   * mundo, redesenha o buraco junto).
+   */
+  escavar(x, y) {
+    const chave = chaveCelula(x, y);
+    const celula = this.terreno.get(chave);
+    if (!celula) return null;
+
+    const def = buscarItem(this.catalogo, celula.itemId);
+    if (!def) return null;
+
+    const resultado = minerar({
+      catalogo: this.catalogo,
+      estado: this.estado,
+      itemId: celula.itemId,
+      forcaMineracao: this.derivados.poderMineracao,
+    });
+    if (!resultado.ok) {
+      this.mostrarToast(resultado.motivo);
+      return null;
+    }
+
+    escavarCelula(this.terreno, x, y);
+    this.estado.terrenoCavado[chave] = null;
+
+    const img = this.imagensTerreno.get(chave);
+    if (img) {
+      this.flashes(img.x, img.y - 12, 0xffffff, 6);
+      img.destroy();
+      this.imagensTerreno.delete(chave);
+    }
+
+    for (const ganho of resultado.ganhos) {
+      const g = buscarItem(this.catalogo, ganho.itemId);
+      this.mostrarToast(`+${ganho.qtd} ${g?.nome ?? ganho.itemId}`);
+    }
+    this.ganharXp(resultado.xp);
+    return celula;
+  }
+
+  /** Coloca o bloco selecionado na célula da mira. */
+  colocarNaMira(x, y, itemId) {
+    const chave = chaveCelula(x, y);
+    if (this.terreno.has(chave)) {
+      this.mostrarToast('Já tem bloco ali.');
+      return false;
+    }
+
+    const celula = colocarCelula(this.terreno, x, y, itemId);
+    if (!celula) return false;
+
+    this.estado.terrenoCavado[chave] = itemId;
+    this.criarImagemTerreno(celula);
+    this.imagensTerreno.get(chave)?.setDepth(y * TAMANHO);
+    return true;
+  }
+
+  /** Abre um baú: dá o loot ao jogador e some com o baú. */
+  abrirBau(bau, img) {
+    for (const item of bau.itens ?? []) {
+      const qtd = item.qtd ?? 1;
+      adicionarItem(this.estado.inventario, item.itemId, qtd);
+      const def = buscarItem(this.catalogo, item.itemId);
+      this.mostrarToast(`+${qtd} ${def?.nome ?? item.itemId}`);
+    }
+    if (!bau.itens?.length) this.mostrarToast('Baú vazio.');
+    img?.destroy();
+    this.imagensBau.delete(chaveCelula(bau.x, bau.y));
+    this.ganharXp(5);
+    this.persistir();
+  }
+
+  /** Pega um item largado no chão. */
+  pegarItemChao(item, img) {
+    adicionarItem(this.estado.inventario, item.itemId, item.qtd ?? 1);
+    const def = buscarItem(this.catalogo, item.itemId);
+    this.mostrarToast(`+${item.qtd ?? 1} ${def?.nome ?? item.itemId}`);
+    img?.destroy();
+    this.imagensItemChao.delete(chaveCelula(item.x, item.y));
+    this.ganharXp(1);
+    this.persistir();
   }
 
   texturaDoItem(def) {
@@ -876,6 +1099,25 @@ export class WorldScene extends Phaser.Scene {
       }
     }
 
+    // Baús e itens no chão
+    for (const [chave, img] of this.imagensBau ?? []) {
+      if (!img.active) continue;
+      const d = Phaser.Math.Distance.Between(this.jogador.x, this.jogador.y - 14, img.x, img.y - 12);
+      if (d < melhorDist) {
+        melhorDist = d;
+        melhor = { tipo: 'bau', img, chave };
+      }
+    }
+
+    for (const [chave, img] of this.imagensItemChao ?? []) {
+      if (!img.active) continue;
+      const d = Phaser.Math.Distance.Between(this.jogador.x, this.jogador.y - 14, img.x, img.y - 12);
+      if (d < melhorDist) {
+        melhorDist = d;
+        melhor = { tipo: 'itemChao', img, chave };
+      }
+    }
+
     // Portal (perto e com LAST_RO de folga: e um alvo alto, nao um no do chao)
     if (this.portal?.active) {
       const d = Phaser.Math.Distance.Between(
@@ -908,6 +1150,16 @@ export class WorldScene extends Phaser.Scene {
   atalhos() {
     this.input.keyboard.on('keydown-E', () => this.acaoPrincipal());
     this.input.keyboard.on('keydown-Q', () => this.acaoConstruir());
+    // A Mochila emite isto ao escolher um bloco para construir.
+    //
+    // Antes, `InventarioScene` escrevia `blocoSelecionado` em si mesma e
+    // fechava — a seleção morria com a cena, e `acaoConstruir` caía sempre no
+    // aviso de "selecione um bloco". Construir nunca funcionou.
+    this.events.on('bloco-selecionado', (itemId) => {
+      this.blocoSelecionado = itemId;
+      const def = buscarItem(this.catalogo, itemId);
+      this.mostrarToast(`${def?.nome ?? itemId} na mao — use Q perto de uma celula.`, 2600);
+    });
     this.input.keyboard.on('keydown-B', () => this.alternarPortal());
     this.input.keyboard.on('keydown-I', () => this.abrirInventario());
     this.input.keyboard.on('keydown-T', () => this.abrirTalentos());
@@ -976,6 +1228,21 @@ export class WorldScene extends Phaser.Scene {
 
   /** E: ataca monstro, mineraria recurso ou derruba bloco, conforme o alvo. */
   acaoPrincipal() {
+    // Ordem: o que está NA MIRA tem prioridade sobre o que está por perto.
+    //
+    // A mira é o que o jogador está olhando. Sem esta precedência, cavar a
+    // célula da mira podia derrubar um bloco da base que estava a 40px, porque
+    // `alvoPerto` varre tudo e fica com o mais próximo — e o bloco da base
+    // estava mais perto que a célula que ele mirava.
+    const celula = this.alvoCelula;
+    if (celula && this.terreno?.has(chaveCelula(celula.x, celula.y))) {
+      const cavado = this.escavar(celula.x, celula.y);
+      if (cavado) {
+        this.persistir();
+        return;
+      }
+    }
+
     const alvo = this.alvoPerto();
     if (!alvo) {
       this.mostrarToast('Nada por perto.');
@@ -984,34 +1251,65 @@ export class WorldScene extends Phaser.Scene {
     if (alvo.tipo === 'monstro') this.atacarMonstro(alvo.monstro);
     else if (alvo.tipo === 'recurso') this.minerarNo(alvo);
     else if (alvo.tipo === 'portal') this.abrirPainelDePortais();
+    else if (alvo.tipo === 'bau') this.abrirBau(alvo.img.getData('bau'), alvo.img);
+    else if (alvo.tipo === 'itemChao') this.pegarItemChao(alvo.img.getData('itemChao'), alvo.img);
     else this.derrubarBloco(alvo);
   }
 
-  /** Q: constroi o bloco selecionado perto do jogador. */
+  /** Q: constroi o bloco selecionado na celula da mira. */
   acaoConstruir() {
     const selecionado = this.blocoSelecionado;
     if (!selecionado) {
-      this.mostrarToast('Selecione um bloco de construcao na Mochila [I].');
+      this.mostrarToast('Selecione um bloco na Mochila [I] antes de construir.');
       return;
     }
-    const col = this.xParaCol(this.jogador.x, this.jogador.x);
-    const linha = this.yParaLinha(this.jogador.y, this.jogador.y - TAMANHO * 2);
-    const resultado = construir({
-      estado: this.estado,
-      catalogo: this.catalogo,
-      col,
-      linha,
-      itemId: selecionado,
-      alcance: this.derivados.alcanceConstrucao,
-    });
+    const celula = this.alvoCelula;
+    if (!celula) {
+      this.mostrarToast('Mire numa celula primeiro.');
+      return;
+    }
 
-    if (!resultado.ok) {
-      this.mostrarToast(resultado.motivo);
+    // Consome do inventario ANTES de verificar se dá para colocar.
+    //
+    // Ao contrario: verificar depois consumir significa que o jogador perde o
+    // bloco e nao ganha nada, toda vez que mira numa celula ja ocupada — o que
+    // seria a primeira coisa que ele faz, num mundo inteiro cheio de terra.
+    const inventario = this.estado.inventario;
+    const total = (inventario.itens ?? []).reduce((s, i) => (i.itemId === selecionado ? s + (i.qtd ?? 0) : s), 0);
+    if (total <= 0) {
+      this.mostrarToast('Voce nao tem mais esse bloco.');
+      this.blocoSelecionado = null;
       return;
     }
-    this.reconstruirBase();
-    this.mostrarToast(`Bloco colocado (${resultado.xp} XP).`);
-    this.ganharXp(resultado.xp);
+    if (this.terreno?.has(chaveCelula(celula.x, celula.y))) {
+      this.mostrarToast('Ja tem bloco ali.');
+      return;
+    }
+
+    const gastou = this.consumirDoInventario(selecionado, 1);
+    if (!gastou) return;
+    if (this.colocarNaMira(celula.x, celula.y, selecionado)) {
+      this.mostrarToast('Bloco colocado.');
+      this.ganharXp(2);
+      this.persistir();
+    }
+  }
+
+  /** Tira `qtd` unidades de `itemId` do inventário. Devolve se conseguiu. */
+  consumirDoInventario(itemId, qtd) {
+    const itens = this.estado.inventario?.itens;
+    if (!Array.isArray(itens)) return false;
+    for (const pilha of itens) {
+      if (pilha?.itemId !== itemId) continue;
+      if ((pilha.qtd ?? 0) < qtd) continue;
+      pilha.qtd -= qtd;
+      if (pilha.qtd <= 0) {
+        const i = itens.indexOf(pilha);
+        if (i >= 0) itens.splice(i, 1);
+      }
+      return true;
+    }
+    return false;
   }
 
   async minerarNo(alvo) {
@@ -1043,7 +1341,16 @@ export class WorldScene extends Phaser.Scene {
 
   derrubarBloco(alvo) {
     const [col, linha] = alvo.chave.split(',').map(Number);
-    const resultado = derrubarBlocoDaBase(this.estado, this.catalogo, col, linha);
+    // Objeto único. A chamada antiga passava quatro argumentos posicionais e a
+    // função lê `{ estado, catalogo, col, linha }` — então `estado` chegava
+    // `undefined` e `estado.base` estourava TypeError. Derrubar bloco da base
+    // estava quebrado desde que a função mudou de assinatura.
+    const resultado = derrubarBlocoDaBase({
+      estado: this.estado,
+      catalogo: this.catalogo,
+      col,
+      linha,
+    });
     if (!resultado.ok) {
       this.mostrarToast(resultado.motivo);
       return;
@@ -1407,12 +1714,31 @@ export class WorldScene extends Phaser.Scene {
     this.jogador.setDepth(this.jogador.y);
 
     // Mira: quadrado no chao, sempre a frente do jogador.
-    this.mira.setPosition(
-      this.jogador.x + vx * TAMANHO * 1.6,
-      this.jogador.y + vy * TAMANHO * 1.6,
-    );
+    //
+    // A mira é AGORA a célula-alvo de verdade da escavação, e por isso ela é
+    // encaixada na grade. Antes era um quadrado livre em `x + vx * 51.2`, o que
+    // deixava ambíguo qual bloco "aquele" era: a 51.2px do jogador, quase dois
+    // blocos, a posição caía num bloco ou no outro conforme o frame.
+    //
+    // A imagem da célula (x,y) é desenhada em `x*TAMANHO` com origem no canto
+    // inferior, e tem `TAMANHO` de lado — ou seja, cobre exatamente o
+    // retângulo [x*TAMANHO, (x+1)*TAMANHO]. Por isso `floor(coord / TAMANHO)`
+    // dá a célula, sem correção nenhuma.
+    const andando = Math.abs(vx) + Math.abs(vy) > 0;
+    const miraX = Math.floor((this.jogador.x + vx * TAMANHO * 1.6) / TAMANHO) * TAMANHO + TAMANHO / 2;
+    const miraY = Math.floor((this.jogador.y + vy * TAMANHO * 1.6) / TAMANHO) * TAMANHO + TAMANHO / 2;
+
+    this.mira.setPosition(miraX, miraY);
     this.mira.setDepth(this.jogador.y + 1);
-    this.mira.setVisible(Math.abs(vx) + Math.abs(vy) > 0);
+    this.mira.setVisible(andando);
+
+    this.alvoCelula = { x: Math.floor(miraX / TAMANHO), y: Math.floor(miraY / TAMANHO) };
+
+    // A mira muda de cor conforme há o que cavar. Sem isto o jogador não sabe
+    // se está olhando para terra ou para o vazio.
+    const temTerra = this.terreno?.has(chaveCelula(this.alvoCelula.x, this.alvoCelula.y));
+    this.mira.setFillStyle(temTerra ? 0xd4af6a : 0x4a90d9, temTerra ? 0.3 : 0.14);
+    this.mira.setStrokeStyle(1, temTerra ? 0xd4af6a : 0x4a90d9, 0.7);
 
     // Regeneracao de vida e poder.
     if ((this.estado.vida ?? 0) < this.derivados.vidaMax) {

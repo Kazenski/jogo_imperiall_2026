@@ -455,11 +455,22 @@ export class AdminScene extends Phaser.Scene {
       return ehBloco ? { valor: r.id, rotulo: r.nome ?? r.id } : null;
     };
 
+    // Mesma ideia para BAÚS: o campo "tipos de baú" não pode oferecer uma
+    // poção. Um item é baú se o tipo for 'bau' OU se a lista de uso tiver 'bau' —
+    // as duas marcações porque o cadastro de itens é anterior a essa regra e
+    // mudar o tipo dos itens existentes quebraria receitas já escritas.
+    const bauDe = (r) => {
+      const usos = Array.isArray(r.uso) ? r.uso : [];
+      const ehBau = r.tipo === 'bau' || usos.includes('bau');
+      return ehBau ? { valor: r.id, rotulo: r.nome ?? r.id } : null;
+    };
+
     this._contexto = {
       classes, itens, monstros, reinos, biomas, npcs, chunks, estacoes,
       classesOpcoes: opcoesDe(classes),
       itensOpcoes: opcoesDe(itens),
       blocosOpcoes: itens.map(blocoDe).filter(Boolean),
+      bausOpcoes: itens.map(bauDe).filter(Boolean),
       monstrosOpcoes: opcoesDe(monstros),
       reinosOpcoes: opcoesDe(reinos),
       biomasOpcoes: opcoesDe(biomas),
@@ -1247,6 +1258,7 @@ export class AdminScene extends Phaser.Scene {
         biomas: ctx.biomasOpcoes,
         npcs: ctx.npcsOpcoes,
         estacoes: ctx.estacoesOpcoes,
+        baus: ctx.bausOpcoes,
       };
       if (mapa[campo.fonte]) return mapa[campo.fonte];
     }
@@ -1646,7 +1658,8 @@ export class AdminScene extends Phaser.Scene {
    * Traduz erro do Firebase para algo acionável.
    *
    * "Missing or insufficient permissions" não ajuda ninguém a decidir entre:
-   *我不是 admin? regras não publicadas? app connectou em outro projeto?
+   * "não sou admin?", "as regras não foram publicadas?" ou "o app conectou em
+   * outro projeto?".
    */
   explicarErroFirebase(erro, acao) {
     const msg = String(erro?.message ?? erro ?? '');

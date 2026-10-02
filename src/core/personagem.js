@@ -54,6 +54,13 @@ export function estadoInicial() {
     },
     // Posição do jogador no mundo (salva entre sessões)
     posicao: { x: 0, y: 0 },
+    // O que o jogador mudou no terreno, por cima do que a semente gera.
+    //
+    // Só as células alteradas, nunca a grade inteira: o terreno é procedural e
+    // todo mundo gera o mesmo, então guardar o procedural aqui seria redundante
+    // e caro. `null` = cavado (a célula não existe mais). Uma entrada com
+    // `itemId` = bloco colocado pelo jogador.
+    terrenoCavado: {},
   };
 }
 

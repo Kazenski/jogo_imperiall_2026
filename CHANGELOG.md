@@ -8,6 +8,69 @@ caminho mais rápido é relatar com o que você estava fazendo na tela.
 
 ---
 
+## Terreno com altura — agora dá para cavar
+
+*v0.1.3 · Outubro de 2026*
+
+### O que mudou
+
+O mundo tem chão de verdade. Cada coluna tem uma superfície e, abaixo dela,
+camadas de terra. Você anda por cima, mira num bloco e **cava**: o bloco some,
+vai para a mochila e você ganha XP.
+
+- **`E`** escava o bloco da mira
+- **`Q`** coloca o bloco que você escolheu na Mochila
+
+O quadradinho dourado que aparece à sua frente é a mira. Ele fica **azul** quando
+não há nada ali, para você não ficar cavando o vazio.
+
+E como o terreno tem subsolo, a escavação é vertical: quanta mais baixa a
+superfície naquele ponto, mais terra existe para cavar. É isso que a altura que
+você cadastra no chunk controla.
+
+### O terreno nasce do chunk
+
+A grade vem do chunk que você cadastrou — superfície, subsolo, altura, variação
+e profundidade. **Nada disso é salvo no seu perfil**, exceto o que você mudou:
+o que cavou e o que colocou. Todo mundo vê o mesmo mundo, e só o que é seu muda.
+
+Se você redesenhar um chunk no painel, o terreno muda — e os buracos antigos
+desaparecem junto. É o comportamento esperado de quem redesenha o mundo.
+
+### Baús e itens no chão
+
+A aba de Chunks ganhou campos novos:
+
+- **Blocos nativos** — o que pertence a este chunk de propósito
+- **Tipos de baú** — só entram itens marcados como baú no cadastro de Itens
+- **Chance e máximo de baús** — com teto, para não virar 20 baús num chunk só
+- **Conteúdo dos baús** — `bauId:itemId:chance:quantidade`, uma linha por baú
+- **Itens no chão** e a densidade deles — tralha que o jogador pega andando
+
+O conteúdo do baú é sorteado **uma vez só**, na geração. O mesmo baú tem o
+mesmo conteúdo para todo mundo, para sempre.
+
+### Três coisas que estavam quebradas
+
+Aproveitei e consertei o que estava no caminho:
+
+- **Construir nunca funcionou.** O `Q` avisava "selecione um bloco" para sempre:
+  a Mochila escrevia a escolha em si mesma e era destruída ao fechar. E o botão
+  "Construir com este" só aparecia em **ferramentas** — numa picareta, nunca
+  numa pedra.
+- **Derrubar bloco da base** estourava um erro interno, por uma chamada com os
+  parâmetros na ordem errada.
+- **Cavar não consumia o bloco se a célula estivesse ocupada** — você perdia o
+  material sem ganhar nada. Agora ele confere antes.
+
+### Para ver o terreno
+
+O jogo normal precisa de conta. Para olhar o terreno sem login, com o dev server
+no ar, abra **`/teste-terreno.html`** — sobe a cena do mundo com um chunk de
+exemplo e botões de escavar, colocar e abrir baú.
+
+---
+
 ## Chunks — o mundo passa a ser desenhado, não sorteado
 
 *v0.1.3 · Outubro de 2026*
@@ -59,9 +122,14 @@ sorteio desfazer o desenho.
 ### O que ainda NÃO mudou no jogo
 
 Isto é importante, para ninguém ficar esperando algo que não chegou: os chunks
-**não entram no jogo ainda**. O que existe agora é o cadastro e a geração — o
-terreno com altura e os chunks na Exploração vêm na próxima etapa. A aba serve
-para você já escrever o mundo enquanto a parte visual é construída.
+**entram no terreno** (veja a seção acima), mas o mundo ainda é o mesmo tamanho
+fixo de 60×44 blocos. A exploração que anda sem parar, com o mundo gerado sob
+demanda conforme você caminha, é a etapa seguinte.
+
+Também não mudou: o relevo ainda não é caminhável. O jogo segue top-down, sem
+gravidade — a altura do terreno é **profundidade de terra para cavar**, e não
+um morro que se sobe. Fazer isso exigiria inventar pulo e colisão, que é trocar o
+jogo, não o mapa.
 
 ---
 

@@ -566,13 +566,22 @@ export class InventarioScene extends Phaser.Scene {
           this.atualizarDetalhe();
         },
       });
-      if (def?.tipo === 'ferramenta') {
+      // Blocos — e nao ferramentas — sao o que se constroi. A acao estava
+      // so em `tipo === 'ferramenta'`, que nunca teve nada a ver com
+      // construir: o jogador via "Construir com este" numa picareta, e
+      // nenhuma pedra no inventario oferecia a opcao.
+      const usoAqui = Array.isArray(def?.uso) ? def.uso : [];
+      if (def?.tipo === 'bloco' || usoAqui.includes('estrutura')) {
         acoes.push({
           rotulo: 'Construir com este',
           largura: 168,
           cor: 0xd4af6a,
           onClick: () => {
-            this.blocoSelecionado = pilha.itemId;
+            // O World e quem constroi. Atribuir `this.blocoSelecionado` aqui
+            // escrevia na cena da Mochila, que e destruida ao fechar — a
+            // selecao morria com ela, e o `Q` no mundo nunca teve com o que
+            // trabalhar.
+            this.scene.get('World')?.events?.emit('bloco-selecionado', pilha.itemId);
             this.toast(`${def.nome} selecionado para construcao.`);
             this.fechar();
           },
@@ -811,13 +820,22 @@ export class InventarioScene extends Phaser.Scene {
           this.atualizarDetalhe();
         },
       });
-      if (def?.tipo === 'ferramenta') {
+      // Blocos — e nao ferramentas — sao o que se constroi. A acao estava
+      // so em `tipo === 'ferramenta'`, que nunca teve nada a ver com
+      // construir: o jogador via "Construir com este" numa picareta, e
+      // nenhuma pedra no inventario oferecia a opcao.
+      const usoAqui = Array.isArray(def?.uso) ? def.uso : [];
+      if (def?.tipo === 'bloco' || usoAqui.includes('estrutura')) {
         acoes.push({
           rotulo: 'Construir com este',
           largura: 168,
           cor: 0xd4af6a,
           onClick: () => {
-            this.blocoSelecionado = pilha.itemId;
+            // O World e quem constroi. Atribuir `this.blocoSelecionado` aqui
+            // escrevia na cena da Mochila, que e destruida ao fechar — a
+            // selecao morria com ela, e o `Q` no mundo nunca teve com o que
+            // trabalhar.
+            this.scene.get('World')?.events?.emit('bloco-selecionado', pilha.itemId);
             this.toast(`${def.nome} selecionado para construcao.`);
             this.fechar();
           },

@@ -1,0 +1,199 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8" />
+    <title>Teste — terreno com altura</title>
+    <style>
+      body { margin: 0; background: #0a0805; color: #d9dee3; font-family: system-ui, sans-serif; }
+      #hud { padding: 10px 14px; font-size: 12px; line-height: 1.6; }
+      #hud b { color: #d4af6a; }
+      #painel { padding: 0 14px 14px; font-size: 12px; }
+      button { font: inherit; padding: 5px 10px; margin: 0 4px 4px 0; cursor: pointer; }
+      canvas { display: block; margin: 0 auto; }
+    </style>
+  </head>
+  <body>
+    <div id="hud">carregando…</div>
+    <div id="painel">
+      <button data-acao="gerar">regenerar</button>
+      <button data-acao="cavar">cavar mira</button>
+      <button data-acao="colocar">colocar mira</button>
+      <button data-acao="baus">espalhar baus</button>
+    </div>
+    <div id="jogo"></div>
+
+    <script type="module">
+      import Phaser from 'phaser';
+      import { BootScene } from '/jogo_imperiall_2026/src/scenes/BootScene.js';
+      import { WorldScene } from '/jogo_imperiall_2026/src/scenes/WorldScene.js';
+      import { estadoInicial } from '/jogo_imperiall_2026/src/core/personagem.js';
+      import {
+        gerarTerrenoMundo,
+        chaveCelula,
+      } from '/jogo_imperiall_2026/src/core/mundo.js';
+
+      const hud = document.getElementById('hud');
+
+      // Chunk de teste: colina de ferro com subsolo cavável.
+      const CHUNK = {
+        id: 'c-teste',
+        nome: 'colina de ferro',
+        mundoId: 'r-teste',
+        posX: 0,
+        posY: 0,
+        tamanhoBlocos: 32,
+        peso: 10,
+        blocosSuperficie: ['grama'],
+        blocosSubSolo: ['terra'],
+        alturaBase: 10,
+        alturaVariacao: 4,
+        suavizarAltura: 3,
+        profundidadeMin: 5,
+        profundidadeMax: 10,
+        baus: ['bau_comum'],
+        chanceBaus: 0.03,
+        quantidadeBaus: 3,
+        conteudoBaus: [
+          { bauId: 'bau_comum', itens: [
+            { itemId: 'pedra', chance: 90, qtdMin: 1, qtdMax: 5 },
+            { itemId: 'ferro', chance: 40, qtdMin: 1, qtdMax: 3 },
+          ] },
+        ],
+        itensChao: ['pancada'],
+        densidadeItensChao: 0.004,
+      };
+
+      const ITENS = [
+        { id: 'grama', nome: 'Grama', tipo: 'bloco', cor: 0x7ba23f, uso: ['estrutura'] },
+        { id: 'terra', nome: 'Terra', tipo: 'bloco', cor: 0x8a6a2f, uso: ['estrutura'] },
+        { id: 'pedra', nome: 'Pedra', tipo: 'bloco', cor: 0xa8b2bc, uso: ['estrutura'] },
+        { id: 'ferro', nome: 'Ferro', tipo: 'bloco', cor: 0x6b7680, uso: ['estrutura'] },
+        { id: 'bau_comum', nome: 'Baú', tipo: 'bloco', cor: 0xd4af6a, uso: ['estrutura'] },
+        { id: 'pancada', nome: 'Pancada', tipo: 'equipavel', cor: 0xc394d0 },
+      ];
+
+      const CATALOGO_FALSO = {
+        itens: ITENS,
+        classes: [],
+        skills: [],
+        recipes: [],
+        monsters: [],
+        worldTemplates: [{ id: 'r-teste', nome: 'Teste', largura: 60, altura: 44, bioma: 'campo' }],
+        chunks: [CHUNK],
+        npcs: [],
+        biomas: [],
+        achievements: [],
+        indice: {
+          itens: Object.fromEntries(ITENS.map((i) => [i.id, i])),
+          classes: {}, skills: {}, recipes: {}, monsters: {},
+          worldTemplates: { 'r-teste': { id: 'r-teste', nome: 'Teste', largura: 60, altura: 44 } },
+          chunks: { 'c-teste': CHUNK },
+          npcs: {}, biomas: {}, achievements: {},
+        },
+      };
+
+      const jogo = new Phaser.Game({
+        type: Phaser.AUTO,
+        width: 1000,
+        height: 720,
+        parent: 'jogo',
+        pixelArt: true,
+        backgroundColor: '#1b2a17',
+        // A WorldScene cria o jogador com `this.physics.add.sprite`. Sem Arcade
+        // ligado, `this.physics` é undefined e a cena morre em `criarJogador`.
+        // O jogo real liga isto em `main.js`.
+        physics: { default: 'arcade', arcade: { debug: false } },
+        // O BootScene PRECISA estar aqui: todas as texturas do jogo são geradas
+        // por ele em runtime (não existe arquivo de imagem no projeto). Sem
+        // ele, todo `add.image(..., TEXTURAS.BLOCO)` cai em `__MISSING` e o
+        // terreno sai desenhado como retângulos vazios.
+        scene: [BootScene, WorldScene],
+      });
+
+      jogo.events.once('ready', async () => {
+        const estado = estadoInicial();
+        estado.nivel = 1;
+        estado.vidaMax = 500;
+        estado.poderMax = 500;
+        estado.posicao = { x: 480, y: 120 };
+
+        const cena = jogo.scene.getScene('World');
+        cena.scene.start('World', { uid: null, podeSair: false, perfil: null, estado, isAdmin: false });
+
+        // `scene.start` devolve a cena, nao uma promise: o `create()` continua
+        // rodando (ele e async, carrega o catalogo). Injetar aqui rodaria com
+        // `this.estado` ainda nulo, e `criarTerreno` rebentaria.
+        await new Promise((res) => {
+          const t = setInterval(() => {
+            if (cena.pronto) { clearInterval(t); res(); }
+          }, 60);
+        });
+
+        // O `create()` faz `this.catalogo = await carregarCatalogo()`, que
+        // SOBRESCREVE qualquer coisa posta antes. Por isso o catálogo falso e
+        // injetado DEPOIS, e o terreno e reconstruido na mao.
+        cena.catalogo = CATALOGO_FALSO;
+        cena.reinoAtual = CATALOGO_FALSO.worldTemplates[0];
+        cena.criarTerreno();
+
+        // Deixa o jogador em cima do chao, para a mira cair em terra.
+        const primeiro = [...cena.terreno.values()].find((c) => c.camada === 'superficie');
+        if (primeiro) cena.jogador.setPosition(primeiro.x * 32 + 16, primeiro.y * 32 - 40);
+      });
+
+      // ---------- acoes de teste ----------
+      const escena = () => jogo.scene.getScene('World');
+
+      function relatar(extra = '') {
+        const c = escena();
+        if (!c?.terreno) return;
+        const total = c.terreno.size;
+        const cavadas = Object.keys(c.estado?.terrenoCavado ?? {}).length;
+        let superficie = 0;
+        let subsolo = 0;
+        for (const cel of c.terreno.values()) {
+          if (cel.camada === 'superficie') superficie += 1;
+          else subsolo += 1;
+        }
+        hud.innerHTML =
+          `terreno: <b>${total}</b> celulas (superficie ${superficie}, subsolo ${subsolo})<br>` +
+          `escavacoes gravadas: <b>${cavadas}</b> · imagens vivas: <b>${c.imagensTerreno?.size ?? 0}</b><br>` +
+          `baus: <b>${c.imagensBau?.size ?? 0}</b> · itens no chao: <b>${c.imagensItemChao?.size ?? 0}</b><br>` +
+          `mira: ${c.alvoCelula ? `${c.alvoCelula.x},${c.alvoCelula.y}` : '—'} · ` +
+          `tem terra: ${c.alvoCelula && c.terreno.has(chaveCelula(c.alvoCelula.x, c.alvoCelula.y)) ? 'sim' : 'nao'}<br>` +
+          `inventario: <b>${(c.estado?.inventario?.itens ?? []).length}</b> pilhas` +
+          (extra ? `<br><span style="color:#e6c47c">${extra}</span>` : '');
+      }
+
+      document.querySelectorAll('button').forEach((b) => {
+        b.addEventListener('click', async () => {
+          const c = escena();
+          if (!c?.terreno) return;
+          const acao = b.dataset.acao;
+          const a = c.alvoCelula ?? { x: 0, y: 0 };
+
+          if (acao === 'cavar') {
+            const cel = c.escavar(a.x, a.y);
+            relatar(cel ? `escavou ${cel.itemId} em ${a.x},${a.y}` : 'nao havia bloco ali');
+          } else if (acao === 'colocar') {
+            c.estado.inventario.itens.push({ uid: 999, itemId: 'pedra', qtd: 9, upgrades: [] });
+            const ok = c.colocarNaMira(a.x, a.y, 'pedra');
+            relatar(ok ? `colocou pedra em ${a.x},${a.y}` : 'nao colocou');
+          } else if (acao === 'gerar') {
+            relatar('regerado (F5 recarrega a cena)');
+          } else if (acao === 'baus') {
+            const lista = [...c.imagensBau.entries()];
+            const [chave, img] = lista[0] ?? [];
+            if (img) { c.abrirBau(img.getData('bau'), img); relatar(`abriu bau em ${chave}`); }
+            else relatar('nenhum bau visivel');
+          }
+        });
+      });
+
+      // Atualiza o relatorio a cada segundo.
+      setInterval(() => relatar(), 1000);
+      window.__relatar = relatar;
+      window.__cena = escena;
+    </script>
+  </body>
+</html>
