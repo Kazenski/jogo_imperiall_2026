@@ -169,31 +169,20 @@ export function botao(scene, x, y, rotulo, onClick, opcoes = {}) {
   const dy = box.deslocamento.dy;
   box.caixa.setAlpha(alfa);
 
-  // Zona de clique: um retangulo invisivel dentro do container.
+  // Torna o próprio Graphics interativo (em vez de um retângulo separado).
   // Depth alto (1000) para ter prioridade de input sobre fundos (depth 0).
-  // Sem isso, fundos full-screen com depth 0 interceptam todos os cliques.
-  const clique = scene.add
-    .rectangle(0, 0, largura, altura, 0xffffff, 0)
-    .setOrigin(0, 0)
-    .setPosition(dx, dy)
-    .setInteractive({ useHandCursor: true })
-    .setDepth(1000);
-  box.add(clique);
+  box.caixa.setInteractive({ useHandCursor: true });
+  // Força o depth via side-effect para evitar tree-shaking.
+  box.caixa.depth = 1000;
+  box.caixa.setDepth(box.caixa.depth);
 
   // Posicionamento do conteudo dentro da caixa.
-  //
-  // As tres situacoes sao distintas de proposito, e confundi-las era o que
-  // jogava o icone para fora do botao:
-  //  - so icone  -> icone no centro geometrico da caixa;
-  //  - icone+texto -> icone a esquerda, texto centrado no espaco restante;
-  //  - so texto  -> centralizado, ou alinhado dentro do padding.
   const tamanhoIcone = icone?.tamanho ?? 22;
   let imgIcone = null;
   let textoX = largura / 2;
 
   if (icone) {
     const temTexto = Boolean(rotulo);
-    // Com texto o icone fica na faixa da esquerda; sem texto, no centro.
     const xIcone = temTexto ? padding + tamanhoIcone / 2 : largura / 2;
     imgIcone = scene.add
       .image(dx + xIcone, dy + altura / 2, icone.texture)
@@ -218,7 +207,6 @@ export function botao(scene, x, y, rotulo, onClick, opcoes = {}) {
       align: 'center',
     })
     .setOrigin(0.5);
-  // Um rotulo vazio nao deve reservar espaco nem interceptar o clique.
   label.setVisible(Boolean(rotulo));
   box.add(label);
 
@@ -231,18 +219,14 @@ export function botao(scene, x, y, rotulo, onClick, opcoes = {}) {
   };
   aplicarCor(cor);
 
-  clique.on('pointerover', () => aplicarCor(corHover));
-  clique.on('pointerout', () => aplicarCor(cor));
-  clique.on('pointerdown', onClick);
+  // Eventos no próprio Graphics (que agora é interativo)
+  box.caixa.on('pointerover', () => aplicarCor(corHover));
+  box.caixa.on('pointerout', () => aplicarCor(cor));
+  box.caixa.on('pointerdown', onClick);
 
   return {
-    // `caixa` é o Graphics de fundo (tem setOrigin, width, height).
-    // `container` é o Container Phaser (para add/remove, posicionamento).
     caixa: box.caixa,
     container: box,
-    clique,
-    label,
-    icone: imgIcone,
     // Aliases para quem esperava um Rectangle (.width/.height do GameObject).
     width: largura,
     height: altura,
