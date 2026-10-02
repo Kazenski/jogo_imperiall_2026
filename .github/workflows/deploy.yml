@@ -41,6 +41,9 @@ jobs:
       - name: Show git commit
         run: git log -1 --oneline
 
+      - name: Show git status
+        run: git status
+
       - name: Show progresso.js content
         run: head -50 src/core/progresso.js
 
