@@ -41,6 +41,9 @@ jobs:
       - name: Show git commit
         run: git log -1 --oneline
 
+      - name: Show progresso.js content
+        run: head -50 src/core/progresso.js
+
       - name: Build
         # Vite le VITE_* do ambiente em tempo de build.
         # Sao as mesmas variaveis do .env.local. Se nao existirem no repo,
