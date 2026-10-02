@@ -397,8 +397,13 @@ export class LobbyScene extends Phaser.Scene {
   // =====================================================================
 
   criarSlots(x, y, w, h) {
-    const grade = calcularGrade(w, h, MAX_PERSONAGENS);
     const personagens = this.perfil?.personagens ?? [];
+    // Mostra só os heróis que EXISTEM. Antes a grade era sempre MAX_PERSONAGENS:
+    // com 0 criados apareciam 10 cartões "+" e o CRUD parecia inutilizável;
+    // e com o perfil nulo (garantirPerfil retornava undefined) a lista gravada
+    // no Firebase nunca aparecia — só sobravam os "+".
+    const total = Math.max(1, personagens.length);
+    const grade = calcularGrade(w, h, total);
 
     // Altura do botão como fração da altura do cartão, com piso e teto: abaixo
     // de 22px o texto de 10px não cabe, e o teto evita botão gigante num cartão
@@ -423,15 +428,27 @@ export class LobbyScene extends Phaser.Scene {
     const origemX = x + Math.max(0, (w - larguraGrade) / 2);
     const origemY = y + Math.max(0, (h - alturaGrade) / 2);
 
-    for (let i = 0; i < MAX_PERSONAGENS; i++) {
+    if (personagens.length === 0) {
+      this.raiz.add(
+        uiTexto(this, x + w / 2, y + h / 2 - 14, 'Nenhum herói no salão ainda.\nUse "+ NOVO HERÓI" para forjar o primeiro.', {
+          fontSize: '13px',
+          color: PERGAMINHO,
+          align: 'center',
+        })
+          .setOrigin(0.5, 0)
+          .setAlpha(0.7),
+      );
+      return;
+    }
+
+    for (let i = 0; i < personagens.length; i++) {
       const linha = Math.floor(i / grade.cols);
       const coluna = i % grade.cols;
       const cx = origemX + coluna * (grade.largura + VAO);
       const cy = origemY + linha * (grade.altura + VAO);
       const char = personagens[i];
 
-      if (char) this.criarSlotOcupado(char, cx, cy, grade.largura, grade.altura);
-      else this.criarSlotVazio(cx, cy, grade.largura, grade.altura, i);
+      this.criarSlotOcupado(char, cx, cy, grade.largura, grade.altura);
     }
   }
 
@@ -935,7 +952,8 @@ export class LobbyScene extends Phaser.Scene {
         racaId: escolha.racaId,
         vocacaoId: escolha.vocacaoId,
       });
-      // O `avisar` acima morre com a cena: a mensagem viaja nos dados da nova.
+      // Recarrega o perfil para que o novo Lobby mostre o personagem criado.
+      this.perfil = await carregarPerfilJogador(this.uid);
       this.voltarAoLobby({ aviso: `${escolha.nome} entrou para o salão.` });
     } catch (erro) {
       console.error('[Lobby] falha ao criar personagem:', erro);
@@ -981,7 +999,8 @@ export class LobbyScene extends Phaser.Scene {
         racaId: escolha.racaId,
         vocacaoId: escolha.vocacaoId,
       });
-      // O `avisar` acima morre com a cena: a mensagem viaja nos dados da nova.
+      // Recarrega o perfil para que o novo Lobby mostre as alterações.
+      this.perfil = await carregarPerfilJogador(this.uid);
       this.voltarAoLobby({ aviso: `${escolha.nome} foi atualizado.` });
     } catch (erro) {
       console.error('[Lobby] falha ao editar personagem:', erro);
@@ -1087,6 +1106,7 @@ export class LobbyScene extends Phaser.Scene {
 
     try {
       await cancelarExclusao(this.uid, char.id);
+      this.perfil = await carregarPerfilJogador(this.uid);
       this.voltarAoLobby({ aviso: `${char.nome ?? 'O herói'} voltou para a lista.` });
     } catch (erro) {
       console.error('[Lobby] falha ao cancelar exclusão:', erro);

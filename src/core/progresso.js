@@ -235,19 +235,34 @@ export async function carregarPerfilJogador(uid, userInfo = null) {
   try {
     const dados = await Promise.race([
       lerPerfilFirestore(uid),
-      new Promise((r) => setTimeout(() => r(Symbol('sem-resposta')), 4000)),
+      new Promise((r) => setTimeout(() => r(SEM_RESPOSTA), 4000)),
     ]);
 
-    let perfil = dados === Symbol('sem-resposta') ? null : dados;
+    // Antes: `dados === Symbol('sem-resposta')` criava um Symbol NOVO a cada
+    // comparação (sempre false). No timeout, o símbolo caía em `perfil`, o
+    // `!perfil.personagens` disparava a migração e um perfil fantasma com um
+    // "Viajante" era gravado por cima do espelho local. E pior: `!perfil`
+    // abaixo mandava criar um documento NOVO e sobrescrevia o antigo.
+    if (dados === SEM_RESPOSTA) {
+      // Firestore demorou demais: usa o espelho local em vez de decidir que o
+      // jogador não existe. NUNCA cria/substitui o doc a partir de um timeout.
+      return lerPerfilLocal(uid) ?? perfilInicial(uid, userInfo);
+    }
+
+    let perfil = dados;
 
     if (!perfil) {
-      // Primeiro login — cria perfil vazio
+      // Primeiro login — cria perfil vazio (merge para nunca apagar o doc).
       const novo = perfilInicial(uid, { displayName: 'Viajante', email: null, photoURL: null });
-      await setDoc(doc(pegarDb(), NOME_COLECAO_JOGADORES, uid), sanitizarParaFirestore({
-        ...novo,
-        criadoEm: serverTimestamp(),
-        atualizadoEm: serverTimestamp(),
-      }));
+      await setDoc(
+        doc(pegarDb(), NOME_COLECAO_JOGADORES, uid),
+        sanitizarParaFirestore({
+          ...novo,
+          criadoEm: serverTimestamp(),
+          atualizadoEm: serverTimestamp(),
+        }),
+        { merge: true },
+      );
       gravarPerfilLocal(novo);
       return novo;
     }
@@ -687,5 +702,8 @@ export async function ehAdmin(uid) {
 
 /** Garante que o perfil do usuário exista (criado no primeiro login). */
 export async function garantirPerfil(user) {
-  await carregarPerfilJogador(user.uid, user);
+  // Precisa RETORNAR o perfil: o Login repassa este resultado para o lobby.
+  // Como estava (`await` sem return), o lobby recebia `undefined` e desenhava
+  // os 10 slots vazios mesmo com personagens gravados no Firestore.
+  return await carregarPerfilJogador(user.uid, user);
 }
