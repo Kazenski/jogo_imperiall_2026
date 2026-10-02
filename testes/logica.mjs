@@ -543,6 +543,10 @@ console.log('\n== chamadas para funções inexistentes (cenas e ui) ==');
     'firebase', 'document', 'window', 'localStorage', 'navigator', 'history', 'location',
     'super', 'import', 'async', 'get', 'set', 'of', 'new', 'void', 'delete', 'yield',
     'case', 'extends', 'static', 'await', 'then', 'catch',
+    // `export`/`default` só passaram a aparecer como suspeito depois que o teste
+    // passou a olhar identificadores soltos: em `export { a, b }` não há `(` nem
+    // `:` depois da palavra, então ela entrava como se fosse uma referência.
+    'export', 'default',
   ]);
 
   // Identificadores aceitam letras acentuadas.
@@ -555,9 +559,22 @@ console.log('\n== chamadas para funções inexistentes (cenas e ui) ==');
   const umId = new RegExp(`^${ID}+$`, 'u');
   const declaracao = new RegExp(`(?:function|class)\\s+(${ID}+)`, 'gu');
   const variavel = new RegExp(`(?:const|let|var)\\s+(${ID}+)`, 'gu');
+  // A declaração inteira, para pegar `const A = 1, B = 2`.
+  const declaracaoVar = new RegExp(`(?:const|let|var)\\s+([^;\\n]+)`, 'gu');
   const metodo = new RegExp(`^\\s{2,}(?:async\\s+|get\\s+|set\\s+)?(${ID}+)\\s*\\(`, 'gmu');
   const metodoComAssinatura = new RegExp(`^\\s{2,}(?:async\\s+|get\\s+|set\\s+)?(${ID}+)\\s*\\([^)]*\\)\\s*\\{`, 'gmu');
   const chamada = new RegExp(`(^|[^\\p{L}\\p{N}_$.])(${ID}+)\\s*\\(`, 'gu');
+  // Referência a uma CONSTANTE (MAIÚSCULAS) usada como valor: não é membro,
+  // não é chamada e não é chave de objeto (`ALGO:`).
+  //
+  // Deliberadamente estreito. A primeira versão deste teste tentou checar TODO
+  // identificador solto e produziu mais de mil falsos positivos — literais
+  // numéricos, `this`, `const`, chaves de desestruturação, nomes em `import {…}`
+  // viram todos "suspeitos". Um teste que accuse mil fantasmas é pior do que
+  // nenhum: ele acostuma a ignorar a saída. `ALTURA_CHIP` e `ZOOM_MAX` são
+  // nomes em caixa alta usados como valor sem declaração em lugar nenhum — e é
+  // exatamente essa a classe de bug que morre em produção com build verde.
+  const usoConstante = /(^|[^\p{L}\p{N}_$.?>])([A-Z][A-Z0-9_]{2,})($|[^\p{L}\p{N}_$?:(])/gu;
 
   const naoDeclarados = [];
   for (const rel of arquivos) {
@@ -578,6 +595,14 @@ console.log('\n== chamadas para funções inexistentes (cenas e ui) ==');
     }
     for (const m of src.matchAll(declaracao)) disponiveis.add(m[1]);
     for (const m of src.matchAll(variavel)) disponiveis.add(m[1]);
+    // `const ZOOM_MIN = 1, ZOOM_MAX = 16` — o regex acima só enxerga o
+    // primeiro nome depois da palavra-chave. Sem isto, o segundo nome parece
+    // não declarado e o teste acusa um `ReferenceError` que não existe.
+    for (const m of src.matchAll(declaracaoVar)) {
+      for (const d of m[1].matchAll(new RegExp(`(?:^|,)\\s*(${ID}+)\\s*=`, 'gu'))) {
+        disponiveis.add(d[1]);
+      }
+    }
     // Métodos de classe, com `async`, `get` ou `set` na frente.
     for (const m of src.matchAll(metodo)) disponiveis.add(m[1]);
     for (const m of src.matchAll(metodoComAssinatura)) disponiveis.add(m[1]);
@@ -614,10 +639,27 @@ console.log('\n== chamadas para funções inexistentes (cenas e ui) ==');
       if (disponiveis.has(nome)) continue;
       naoDeclarados.push(`${rel}: ${nome}()`);
     }
+
+    // --- Constantes em CAIXA ALTA usadas sem declaração ---
+    //
+    // `ALTURA_CHIP` em `formularios.js` era um destes: usado como VALOR,
+    // declarado em lugar nenhum do arquivo. O teste de chamadas acima é
+    // estruturalmente cego a isso — não há `(` depois do nome — então o
+    // resultado era `ReferenceError: ALTURA_CHIP is not defined` ao abrir o
+    // Admin, em produção, com build verde e a suíte inteira passando.
+    for (const m of src.matchAll(usoConstante)) {
+      const nome = m[2];
+      if (globais.has(nome)) continue;
+      if (disponiveis.has(nome)) continue;
+      naoDeclarados.push(`${rel}: ${nome}`);
+    }
   }
 
   const suspeitas = [...new Set(naoDeclarados)];
-  ok(suspeitas.length === 0, `toda função chamada existe (suspeitas: ${suspeitas.join(', ') || 'nenhuma'})`);
+  ok(
+    suspeitas.length === 0,
+    `toda função chamada existe e toda constante usada é declarada (suspeitas: ${suspeitas.join(', ') || 'nenhuma'})`,
+  );
 }
 
 console.log(falhas === 0 ? '\nTODOS OS TESTES PASSARAM\n' : `\n${falhas} FALHA(S)\n`);

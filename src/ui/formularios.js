@@ -562,7 +562,12 @@ function campoMultiselec(scene, container, cfg) {
     totalAlturaChip = (linhasUsadas - 1) * (ALTO_CHIP + VAO_CHIP) + ALTO_CHIP;
   };
 
-  let totalAlturaChip = ALTURA_CHIP;
+  // `ALTURA_CHIP` nao existe em lugar nenhum do arquivo — o nome foi inventado
+  // e nunca declarado. Como `refazer()` sempre sobrescreve este valor logo
+  // abaixo (inclusive quando nao ha opcoes: `linhasUsadas` fica 1), o
+  // inicial so precisa ser coerente com o que `refazer()` calcula para uma
+  // linha, que e `ALTO_CHIP`.
+  let totalAlturaChip = ALTO_CHIP;
   let linhasUsadas = 1;
   refazer();
 

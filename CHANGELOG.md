@@ -228,3 +228,31 @@ Digitar na busca da wiki não derruba mais o campo no meio da palavra.
    descricao e imagem.
 
 Obrigado por construir o Imperio com a gente.
+---
+
+## Correção — o login do Google e os botões da tela de entrada
+
+*v0.1.2 · Outubro de 2026*
+
+### O que estava quebrado
+
+- **"Entrar com Google" não fazia nada.** A tela ficava parada, sem aviso.
+- **O painel de administração abria com erro** (`ALTURA_CHIP is not defined`)
+  e a tela ficava em branco.
+- **As mensagens de login apareciam no lugar errado**, batendo nos botões ou
+  fora da tela em janelas baixas.
+
+### O que mudou
+
+- **Os botões da tela de entrada foram reorganizados.** Agora ficam em coluna,
+  com o botão do Google em cima, um "ou" no meio e "Jogar sem conta" embaixo.
+  A mensagem de erro aparece **colada abaixo dos botões**, sempre visível.
+- **"Entrar com Google" dá retorno visual na hora**: o rótulo vira
+  "Abrindo o login..." e os botões escurecem enquanto o navegador abre a
+  janela do Google. Antes o clique parecia perdido.
+- **O erro agora aparece sempre.** Se o login falhar, a mensagem fica na tela
+  em vez de sumir.
+- **Sem popups empilhados:** clicar várias vezes não abre várias janelas.
+- **Sessão já ativa é tratada.** Se você já está logado, o jogo entra
+  direto e avisa com quem — o botão do Google deixa de ser um botão morto.
+- **Corrigido o erro do painel de administração.**

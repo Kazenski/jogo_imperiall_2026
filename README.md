@@ -502,3 +502,24 @@ em `ARQUITETURA_SERVIDORES.md`.
 ## Contato
 
 kazenski.developer@gmail.com
+### Armadilhas desta versão
+
+16. **Constante em caixa alta usada mas nunca declarada** morre só na hora de
+    executar o caminho que a lê, com build verde. `npm test` não pega: ele roda
+    lógica pura em Node e nunca importa Phaser. Hoje existe um scanner para isso
+    em `testes/logica.mjs`, mas ele é **estrito de propósito** (só caixa alta) —
+    ao tentar abrí-lo para qualquer identificador solto, ele acusou mais de mil
+    falsos positivos e continuava sendo inútil.
+17. **`onAuthStateChanged` não aguarda callback async nem captura rejeição.**
+    `observarLogin(async (u) => { await entrar(u) })` transforma qualquer falha
+    em `Uncaught (in promise)` silencioso. O sintoma — "o botão não faz nada" —
+    não tem nenhum sinal visível na tela.
+18. **`signInWithPopup` + `onAuthStateChanged` chamam o mesmo handler por
+    caminhos diferentes.** Sem trava, o fluxo roda duas vezes em paralelo.
+    `entrarUmaVez()` memoiza por `uid` e só libera a promessa **se falhar**.
+19. **Regex com `\p{...}` deve ser literal.** Como `new RegExp(template)`, um
+    `>` fora de ordem dentro da classe de caracteres falha em silêncio: o teste
+    acusava "nenhuma suspeita" sobre um arquivo inteiro. Compare `.source` com
+    um literal equivalente e diffe os índices.
+20. **`const A = 1, B = 2`** — regex de declaração que casa só
+    `(?:const|let|var)\s+(ID)` enxerga `A` e nunca `B`.

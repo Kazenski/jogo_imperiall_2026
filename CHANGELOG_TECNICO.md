@@ -603,3 +603,107 @@ as bases dos amigos, Reinos Etéreos, árvore de talentos, conquistas, login
 Google e o painel administrativo com `F2`.
 
 Deploy no GitHub Pages funcionando em `/jogo_imperiall_2026/`.
+
+---
+
+## [0.1.2] — Login do Google, layout da entrada e o scanner de constantes
+
+*Outubro de 2026*
+
+### 1. `ALTURA_CHIP is not defined` (crash real, build verde)
+
+`src/ui/formularios.js::campoMultiselec()` usava `ALTURA_CHIP` como valor
+inicial de `totalAlturaChip`. Esse identificador **não existe em lugar nenhum
+do repositório** — só a linha de uso. Como `refazer()` sobrescreve o valor
+imediatamente depois (inclusive quando `lista` é vazio, onde `linhasUsadas`
+fica `1`), o inicial só precisa ser coerente com o cálculo de uma linha:
+`ALTO_CHIP`.
+
+Bug pré-existente, nunca alcançado porque o Admin ficava atrás do input morto
+que o `0.1.1` corrigiu. O `npm run build` e o `npm test` passavam: `npm test`
+roda lógica pura em Node e **nunca importa Phaser**, então nenhum bug de
+runtime de cena é detectável por ele.
+
+### 2. "Entrar com Google não faz nada" — três causas somadas
+
+**(a) Rejeição não tratada no `observarLogin`.** O callback era
+`observarLogin(async (user) => { ... await this.entrar(user) })`.
+`onAuthStateChanged` **não aguarda callbacks async nem captura rejeição**. Uma
+falha em `entrar()` virava `Uncaught (in promise)` e o jogador via uma tela
+parada, sem mensagem — exatamente o sintoma reportado. O callback agora é
+síncrono e encerra em `.catch(() => this.marcarOcupado(false))`.
+
+**(b) `entrar()` rodava duas vezes por login.** `signInWithPopup` resolve e
+`tentarGoogle` chamava `entrar()`; o mesmo sign-in **também** dispara
+`onAuthStateChanged`, cujo callback chamava `entrar()` de novo. Duas execuções
+paralelas disputando `scene.start()`, o dobro de escritas no Firestore, e o
+status aparecendo/sumindo. Novo `entrarUmaVez(user)` memoiza a promessa por
+`uid`; ela só é liberada **se falhar**, para o jogador poder tentar de novo.
+`tentarGoogle` deixou de chamar `entrar()` diretamente — quem conduz a
+transição é o observer, com uma rede de segurança caso ele não dispare
+(senão a tela ficaria presa em "Abrindo o login..." para sempre).
+
+**(c) Botão morto com sessão já ativa.** `onAuthStateChanged` dispara na hora
+se o navegador ainda tem sessão, e o jogo entra sozinho. Nesse estado
+clicar "Entrar com Google" não fazia nada de útil. Agora `tentarGoogle`
+detecta `usuarioAtual` e responde em texto em vez de abrir o popup.
+
+> Verificado e **não** é causa: as 6 variáveis `VITE_FIREBASE_*` estão no
+> bundle publicado, a API key responde 200 e `kazenski.github.io` está em
+> `authorizedDomains`. Nem popup bloqueado nem domínio não autorizado.
+
+**(d) Sem trava de reentrada.** Clicar repetidamente abria popups empilhados.
+`this.ocupado` bloqueia os dois handlers; o feedback vai para o próprio botão
+(`setTexto` + `definirVisual` + `setAlpha`), não só para a linha de status.
+
+### 3. Layout da tela de entrada
+
+Quatro posições independentes (`height * 0.38`, `0.55`, `0.66`, `0.82`) foram
+troca­das por **um `y` que avança**, com o status **colado abaixo dos botões**
+(`setOrigin(0.5, 0)`) em vez de 82% da altura. Com quatro multiplicos
+independentes nada era garantido: em janela baixa a mensagem — a única coisa que
+explica um login que falhou — batia no botão de baixo ou saía da tela.
+
+`larguraBotao = Math.min(320, Math.max(200, width - 56))` evita estouro em tela
+estreita. Novo `painelConectado` (`OURO`) mostra com quem a sessão está ativa.
+
+### 4. Scanner de constantes não declaradas (`testes/logica.mjs`)
+
+O teste "chamadas para funções inexistentes" é **estruturalmente cego** ao
+`ALTURA_CHIP`: ele só vê identificador seguido de `(`, e lá não há `(`. Foi
+estendido para checar constantes em caixa alta usadas como valor:
+
+```js
+const usoConstante = /(^|[^\p{L}\p{N}_$.?>])([A-Z][A-Z0-9_]{2,})($|[^\p{L}\p{N}_$?:(])/gu;
+```
+
+**Deliberadamente estreito.** A primeira versão tentou checar *todo*
+identificador solto e produziu **mais de mil falsos positivos** — literais
+numéricos, `this`, `const`, chaves de desestruturação e nomes dentro de
+`import {…}` viram todos "suspeitos". Um teste que accuse mil fantasmas é pior
+do que nenhum: acostuma a ignorar a saída. `ALTURA_CHIP` e `ZOOM_MAX` são
+caixa alta usada como valor sem declaração, e é essa a classe que morre em
+produção com build verde.
+
+Correção de apoio em `disponiveis`: `variavel` só pegava o primeiro nome de
+`const A = 1, B = 2`, então `ZOOM_MAX` (linha 824) parecia não declarado
+apesar de estar declarado — um falso positivo do próprio teste. Novo
+`declaracaoVar` pega a declaração inteira.
+
+**Validação:** reintroduzi `ALTURA_CHIP` e o teste acusou
+`ui/formularios.js: ALTURA_CHIP`; com o fix, passa limpo. Suspeitas: 1
+com o bug, 0 sem.
+
+### Armadilha: `new RegExp(template)` com `\p{...}`
+
+O regex nasceu como `new RegExp(\`(^|[^\\p{L}...])\`, 'gu')` e **não casava com
+nada em lugar nenhum do repositório — sem erro nenhum**. Dentro de um template
+literal os `\p{...}` exigem escape duplo, e o `>` foi parar **depois** do `]`,
+fora da classe de caracteres. O `0` de "nenhuma suspeita" parecia signal verde.
+Por isso o regex agora é **literal**, sem template e sem escape duplo.
+
+Diagnóstico: comparar `usoSolto.source` com um literal equivalente, ambos de
+61 caracteres, e achar os índices 19/20 trocados.
+
+**Regra geral deste repositório: regex com `\p{...}` vai como literal, nunca
+como `new RegExp(template)`.**
