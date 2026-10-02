@@ -94,6 +94,31 @@ service cloud.firestore {
       allow create, update, delete: if isAdmin();
     }
 
+    match /estacoes/{id} {
+      allow read: if request.auth != null;
+      allow create, update, delete: if isAdmin();
+    }
+
+    match /biomas/{id} {
+      allow read: if request.auth != null;
+      allow create, update, delete: if isAdmin();
+    }
+
+    match /npcs/{id} {
+      allow read: if request.auth != null;
+      allow create, update, delete: if isAdmin();
+    }
+
+    match /servidores/{id} {
+      allow read: if request.auth != null;
+      allow create, update, delete: if isAdmin();
+    }
+
+    match /backups/{id} {
+      // Backups são privados: apenas admins podem ler/escrever
+      allow read, write: if isAdmin();
+    }
+
     // ---------- Portais (públicos entre amigos) ----------
     match /portais/{uid} {
       // Qualquer jogador autenticado pode ver portais ativos/lista

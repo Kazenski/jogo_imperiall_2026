@@ -17,12 +17,43 @@ function dbOk() {
   return firebaseDisponivel() && pegarDb();
 }
 
+/**
+ * Lista uma coleção inteira.
+ *
+ * O `orderBy('nome')` original quebrava de duas formas:
+ *
+ *  1. Documentos sem o campo `nome` (registros criados antes do campo existir,
+ *     ou gravados por script) fazem o Firestore recusar a consulta inteira com
+ *     "order by requires a field" — o painel ficava vazio sem explicação.
+ *  2. A ordenação acontece no servidor, mas o painel já sabe ordenar na tela
+ *     (todas as tabelas de balanceamento têm th clicável). Então a ordenação
+ *     aqui é conveniência, não necessidade.
+ *
+ * Se a consulta ordenada falhar por qualquer motivo, caímos para a leitura
+ * simples. Perder a ordem é aceitável; perder a lista inteira não.
+ */
 async function listarColecao(nome, ordenaPor = 'nome') {
   const db = pegarDb();
   if (!db) return [];
-  const q = ordenaPor ? query(collection(db, nome), orderBy(ordenaPor, 'asc')) : collection(db, nome);
-  const snap = await getDocs(q);
-  return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+  const col = collection(db, nome);
+
+  if (ordenaPor) {
+    try {
+      const snap = await getDocs(query(col, orderBy(ordenaPor, 'asc')));
+      return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+    } catch (erro) {
+      console.warn(`[repos] listagem de "${nome}" sem ordenação (${erro?.code ?? erro?.message ?? erro})`);
+    }
+  }
+
+  const snap = await getDocs(col);
+  const linhas = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+  if (ordenaPor) {
+    linhas.sort((a, b) =>
+      String(a[ordenaPor] ?? '').localeCompare(String(b[ordenaPor] ?? ''), 'pt-BR'),
+    );
+  }
+  return linhas;
 }
 
 async function obterDoc(nome, id) {
@@ -138,6 +169,40 @@ export const repoEstacoes = {
   criar: (dados) => criarDoc('estacoes', dados),
   salvar: (id, dados, merge) => salvarDoc('estacoes', id, dados, merge),
   remover: (id) => removerDoc('estacoes', id),
+};
+
+// ---------- Novas coleções ----------
+
+export const repoBiomas = {
+  listar: () => listarColecao('biomas', 'nome'),
+  obter: (id) => obterDoc('biomas', id),
+  criar: (dados) => criarDoc('biomas', dados),
+  salvar: (id, dados, merge) => salvarDoc('biomas', id, dados, merge),
+  remover: (id) => removerDoc('biomas', id),
+};
+
+export const repoNPCs = {
+  listar: () => listarColecao('npcs', 'nome'),
+  obter: (id) => obterDoc('npcs', id),
+  criar: (dados) => criarDoc('npcs', dados),
+  salvar: (id, dados, merge) => salvarDoc('npcs', id, dados, merge),
+  remover: (id) => removerDoc('npcs', id),
+};
+
+export const repoServidores = {
+  listar: () => listarColecao('servidores', 'nome'),
+  obter: (id) => obterDoc('servidores', id),
+  criar: (dados) => criarDoc('servidores', dados),
+  salvar: (id, dados, merge) => salvarDoc('servidores', id, dados, merge),
+  remover: (id) => removerDoc('servidores', id),
+};
+
+export const repoBackups = {
+  listar: () => listarColecao('backups', 'nome'),
+  obter: (id) => obterDoc('backups', id),
+  criar: (dados) => criarDoc('backups', dados),
+  salvar: (id, dados, merge) => salvarDoc('backups', id, dados, merge),
+  remover: (id) => removerDoc('backups', id),
 };
 
 /** Uids marcados como administrador (system/admins). */

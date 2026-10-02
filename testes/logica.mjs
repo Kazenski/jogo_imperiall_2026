@@ -50,6 +50,13 @@ import {
   CAMPOS_RECEITA,
   CAMPOS_REINO,
   CAMPOS_CONQUISTA,
+  CAMPOS_ESTACAO,
+  CAMPOS_BIOMA,
+  CAMPOS_NPC,
+  CAMPOS_SERVIDOR,
+  CORES_PALETA,
+  DESCRICAO_PROCESSO,
+  ROTULOS_PROCESSO,
   CAMPOS_CLASSE,
   RESUMO,
   serializadores,
@@ -398,6 +405,10 @@ console.log('\n== esquema do painel administrativo ==');
     receitas: CAMPOS_RECEITA,
     reinos: CAMPOS_REINO,
     conquistas: CAMPOS_CONQUISTA,
+    estacoes: CAMPOS_ESTACAO,
+    biomas: CAMPOS_BIOMA,
+    npcs: CAMPOS_NPC,
+    servidores: CAMPOS_SERVIDOR,
   };
 
   for (const [nome, campos] of Object.entries(esquemas)) {
@@ -429,10 +440,97 @@ console.log('\n== esquema do painel administrativo ==');
   ok(!CAMPOS_TALENTO.some((c) => c.chave === 'classeId'), 'classe do talento vem do filtro, nao do formulario');
 
   // Todo tipo de campo precisa existir em ui/formularios.js.
-  const tiposImplementados = new Set(['texto', 'numero', 'area', 'select', 'multiselec', 'imagem']);
+  // Cada tipo aqui precisa de um bloco em `desenharFormularioDom`. O nome do
+  // bloco é o próprio `tipo`, então um tipo novo sem renderer some do painel
+  // sem erro — o campo simplesmente não aparece. Por isso a lista é fechada
+  // e verificada aqui.
+  const tiposImplementados = new Set([
+    'texto', 'numero', 'area', 'select', 'multiselec', 'imagem',
+    'cor',            // paleta de 36 quadrados
+    'listaProcessos', // processos com nome + descrição
+    'fixo',           // valor decidido pelo jogo (ex.: NPC inviolável)
+  ]);
   const tiposUsados = new Set(Object.values(esquemas).flatMap((c) => c.map((f) => f.tipo)));
   const tiposDesconhecidos = [...tiposUsados].filter((t) => !tiposImplementados.has(t));
   ok(tiposDesconhecidos.length === 0, `todo tipo de campo tem widget (desconhecidos: ${tiposDesconhecidos.join(',') || 'nenhum'})`);
+
+  // --- Paleta de cores ---
+  //
+  // O pedido era "uns 36 quadradinhos". Contar explicitamente protege contra
+  // alguém remover uma cor sem perceber que o layout foi calibrado para 6x6,
+  // e contra entrar uma cor duplicada que ocuparia dois quadradinhos iguais.
+  ok(CORES_PALETA.length === 36, `a paleta tem 36 cores (tem ${CORES_PALETA.length})`);
+  ok(new Set(CORES_PALETA).size === CORES_PALETA.length, 'nenhuma cor repetida na paleta');
+  ok(
+    CORES_PALETA.every((c) => /^#[0-9a-f]{6}$/i.test(c)),
+    'toda cor da paleta e hex de 6 digitos',
+  );
+  ok(CORES_PALETA.includes('#d4af6a'), 'a paleta inclui o dourado do Império (#d4af6a)');
+
+  // --- Estações: processos ---
+  //
+  // A lista de processos é o mash Mabinogi (life skills) + Starbound (máquinas).
+  // O teste garante que TODO processo tem rótulo e descrição: um processo sem
+  // descrição apareceria no seletor como nome seco, que é exatamente o que o
+  // admin pediu para não acontecer.
+  const processosUsados = (CAMPOS_ESTACAO.find((c) => c.chave === 'processos')?.opcoes ?? [])
+    .map((o) => o.valor);
+  ok(processosUsados.length >= 15, `a lista de processos e substancial (${processosUsados.length})`);
+  ok(
+    processosUsados.every((v) => ROTULOS_PROCESSO[v]),
+    'todo processo tem rotulo legivel',
+  );
+  ok(
+    processosUsados.every((v) => DESCRICAO_PROCESSO[v]),
+    'todo processo tem descricao do que faz',
+  );
+  ok(
+    Object.keys(ROTULOS_PROCESSO).length === Object.keys(DESCRICAO_PROCESSO).length,
+    'rotulo e descricao cobrem os mesmos processos',
+  );
+  ok(
+    CAMPOS_ESTACAO.some((c) => c.chave === 'classesPermitidas' && c.tipo === 'multiselec'),
+    'estacao define quais classes podem usar',
+  );
+
+  // --- Mundos: geometria e biomas ---
+  ok(
+    CAMPOS_REINO.some((c) => c.chave === 'tamanho'),
+    'mundo define tamanho',
+  );
+  ok(
+    CAMPOS_REINO.some((c) => c.chave === 'biomas' && c.tipo === 'multiselec'),
+    'mundo escolhe quais biomas o compose',
+  );
+
+  // --- Biomas: blocos e mobs nativos ---
+  ok(
+    CAMPOS_BIOMA.some((c) => c.chave === 'blocosNativos' && c.fonte === 'blocos'),
+    'bioma lista blocos nativos vindos do cadastro de blocos',
+  );
+  ok(
+    CAMPOS_BIOMA.some((c) => c.chave === 'mobsNativos' && c.fonte === 'monstros'),
+    'bioma lista mobs nativas vindas do cadastro de monstros',
+  );
+
+  // --- NPC: movimento, tipos e invulnerabilidade ---
+  const camposNpc = Object.fromEntries(CAMPOS_NPC.map((c) => [c.chave, c]));
+  ok(camposNpc.movimento?.tipo === 'select', 'NPC escolhe padrao de movimento');
+  ok(
+    (camposNpc.movimento?.opcoes ?? []).length >= 4,
+    'NPC tem varios niveis de movimento (parado, suave, medio, alto)',
+  );
+  ok(camposNpc.tipos?.tipo === 'multiselec', 'NPC marca varias funcoes por vez');
+  ok(
+    (camposNpc.tipos?.opcoes ?? []).every((o) => o.descricao),
+    'toda funcao de NPC explica o que faz',
+  );
+  ok(
+    camposNpc.inviolavel?.tipo === 'fixo' && camposNpc.inviolavel?.valorFixo === true,
+    'NPC e inviolavel por regra fixa (nao editavel)',
+  );
+  ok(camposNpc.loja?.tipo === 'area', 'NPC tem cadastro de loja');
+  ok(camposNpc.missoes?.tipo === 'area', 'NPC tem cadastro de missoes');
 
   // Todo resumo de lista existe e devolve texto.
   for (const [nome, campos] of Object.entries(esquemas)) {

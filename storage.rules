@@ -1,0 +1,71 @@
+rules_version = '2';
+
+// =====================================================================
+//  Firebase Storage — imagens do painel administrativo.
+//
+//  Sem estas regras, TODA requisição ao bucket é negada. É essa negação que
+//  produz o erro que você viu:
+//
+//    Response to preflight request doesn't pass access control check:
+//    It does not have HTTP ok status.
+//
+//  O preflight (OPTIONS) recebe 403 em vez de 200 e o navegador reporta como
+//  falha de CORS — a mensagem engana: não é o CORS configurado errado, é regra
+//  ausente. Publicar estas regras resolve.
+//
+//  Publique com:  firebase deploy --only storage
+// =====================================================================
+
+service firebase.storage {
+  match /b/{bucket}/o {
+
+    // ------------------------------------------------------------------
+    //  Leitura — pública, sem exigir login.
+    //
+    //  Precisa ser anônima porque o preflight CORS (OPTIONS) não carrega o
+    //  token de autenticação. Se exigíssemos `request.auth != null`, o
+    //  navegador aborta antes mesmo de anexar o token.
+    // ------------------------------------------------------------------
+    allow read: if true;
+
+    // ------------------------------------------------------------------
+    //  Escrita — só admin, checando a MESMA lista que o Firestore usa.
+    //
+    //  `firestore.get` lê Firestore de dentro de uma regra de Storage, então
+    //  a lista de admins não fica duplicada nem desatualizada entre os dois
+    //  arquivos. Manter uma cópia do uid aqui seria um furo: promover alguém
+    //  no painel não liberaria o upload, e revogar no painel não bloquearia.
+    // ------------------------------------------------------------------
+    function ehAdmin() {
+      return request.auth != null
+        && firestore.exists(/databases/(default)/documents/system/admins)
+        && request.auth.uid in
+             firestore.get(/databases/(default)/documents/system/admins).data.uids;
+    }
+
+    // Pastas onde o painel faz upload. Qualquer outra escrita é negada, para
+    // que um admin não sobrescreva por engano um arquivo fora do escopo
+    // (exportações, backups, seeds).
+    function pastaDeUpload() {
+      return request.resource.name.matches(
+        '^(itens|classes|talentos|monstros|reinos|conquistas|estacoes|biomas|npcs|relogio)/.+'
+      );
+    }
+
+    // 5 MB: o painel reduz a imagem para 256px antes de enviar, então qualquer
+    // coisa maior é um arquivo errado escolhido por engano.
+    function tamanhoOk() {
+      return request.resource.size < 5 * 1024 * 1024;
+    }
+
+    // Restringir a imagem impede que alguém "suba" um HTML com script usando
+    // o bucket do jogo para hospedar página falsa.
+    function imagemOk() {
+      return request.resource.contentType.matches('image/.*');
+    }
+
+    match /{allPaths=**} {
+      allow write: if ehAdmin() && pastaDeUpload() && tamanhoOk() && imagemOk();
+    }
+  }
+}

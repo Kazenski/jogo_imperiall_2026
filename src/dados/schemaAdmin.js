@@ -34,6 +34,12 @@ import {
   TIPOS_HABILIDADE,
   COMPORTAMENTOS_MONSTRO,
   TIPOS_ACHIEVEMENT,
+  TIPOS_NPC,
+  MOVIMENTOS_NPC,
+  PROCESSOS_ESTACAO,
+  TIPOS_BIOMA,
+  TAMANHOS_MUNDO,
+  TIPOS_SERVIDOR,
 } from '../core/enums.js';
 
 /** Rótulos legíveis para enumswhose valores são snake_case. */
@@ -46,11 +52,76 @@ export const ROTULOS_ESTACAO = {
   oficina: 'Oficina',
 };
 
-// Conversão enums -> {valor, rotulo}, preservando a ordem de declaracao.
-function comRotulo(enumObj, prefixo = '') {
+// Rótulos dos PROCESSOS de estação. Sem este mapa o `comRotulo()` geraria
+// "Impressora 3d" e "Forja avancada" — o painel mostra o que o jogador lê.
+export const ROTULOS_PROCESSO = {
+  cozinhar: 'Cozinhar',
+  ferreiro: 'Trabalhar metal',
+  alquimia: 'Alquimiar',
+  costura: 'Costurar',
+  carpintaria: 'Trabalhar madeira',
+  agricultura: 'Cultivar',
+  mineracao: 'Minerar',
+  pesca: 'Pescar',
+  caca: 'Caçar',
+  madeira: 'Coletar madeira',
+  impressora_3d: 'Impressão 3D',
+  sintetizador: 'Sintetizar material',
+  recicladora: 'Reciclar',
+  forja_avancada: 'Forja avançada',
+  estacao_cientifica: 'Análise científica',
+  fabrica: 'Fabricar em série',
+  montadora: 'Montar máquina',
+  refinaria: 'Refinar material',
+  estacao_energia: 'Gerar energia',
+  impressora_arcana: 'Impressão arcana',
+  conversor_materia: 'Converter matéria',
+};
+
+// Descrição curta do que cada PROCESSO faz — aparece como dica no seletor,
+// porque o jogador não deve ter que adivinhar o que "Estação Científica" faz.
+export const DESCRICAO_PROCESSO = {
+  cozinhar: 'Transforma ingredientes em comida e bebidas.',
+  ferreiro: 'Fundir e forjar minério em barras, lâminas e armaduras.',
+  alquimia: 'Reagentes viram poções, elixires e materiais instáveis.',
+  costura: 'Tecidos e couro viram roupas, bolsas e paraquedas.',
+  carpintaria: 'Madeira e tábuas viram móveis, ferramentas e navios.',
+  agricultura: 'Preparar terra, semear, regar e colher.',
+  mineracao: 'Extrair e processar minério em barras.',
+  pesca: 'Lançar linha e trazer peixes, conchas e trinkets.',
+  caca: 'Abater fauna por carne, couro e troféus.',
+  madeira: 'Derrubar árvores e processar toras em tábuas.',
+  impressora_3d: 'Imprimir peças a partir de descritores de material.',
+  sintetizador: 'Criar materiais novos a partir de ingredientes.',
+  recicladora: 'Transformar sucata e peças quebradas em material reaproveitável.',
+  forja_avancada: 'Metalurgia avançada — ligas com durezas altas.',
+  estacao_cientifica: 'Analisar amostras: revela receitas e propriedades.',
+  fabrica: 'Produzir grandes volumes em fila automática.',
+  montadora: 'Juntar módulos de máquina para formar máquinas completas.',
+  refinaria: 'Purificar minério bruto em lingotes de alta pureza.',
+  estacao_energia: 'Converter combustível em energia para o mundo.',
+  impressora_arcana: 'Materializar itens a partir de essência arcana.',
+  conversor_materia: 'Transmutar um material no tipo de outro.',
+};
+
+/** Monta {valor, rotulo} a partir de um enum, com mapa opcional de rótulos. */
+function comRotulo(enumObj, rotulos = {}) {
   return Object.values(enumObj).map((v) => ({
     valor: v,
-    rotulo: `${prefixo}${v.charAt(0).toUpperCase()}${v.slice(1)}`,
+    rotulo: rotulos[v] ?? `${v.charAt(0).toUpperCase()}${v.slice(1)}`,
+  }));
+}
+
+/**
+ * Igual a comRotulo, mas cada opção também carrega `descricao`.
+ * Usado no seletor de processos das estações: o admin precisa saber o que
+ * "Estação Científica" faz antes de marcar, não descobrir depois no jogo.
+ */
+function comDescricao(enumObj, rotulos = {}, descricoes = {}) {
+  return Object.values(enumObj).map((v) => ({
+    valor: v,
+    rotulo: rotulos[v] ?? `${v.charAt(0).toUpperCase()}${v.slice(1)}`,
+    descricao: descricoes[v] ?? '',
   }));
 }
 
@@ -120,6 +191,57 @@ function paraTexto(v) {
   if (typeof v === 'object') return JSON.stringify(v);
   return String(v);
 }
+
+// =====================================================================
+// SELETOR DE CORES — 36 cores pré-definidas
+// =====================================================================
+
+// 36 cores em 6 famílias × 6 tons (claro → escuro).
+//
+// A grade no painel é 6 colunas, então seis famílias de seis fecham o desenho
+// sem sobra. Escolher por família — e não por "cor bonita" — evita o problema
+// de ter dez tons de verde e nenhum cinza: o admin precisa diferencia
+// classes, e escolher duas classes com a mesma cor torna isso invisível.
+export const CORES_PALETA = [
+  // Dourado imperial (cor da casa)
+  '#f2ddb0', '#e8c87a', '#d4af6a', '#bb8f45', '#9a7130', '#7a5822',
+  // Verde
+  '#cfe6a8', '#a8cf72', '#7ba23f', '#5d8029', '#43611b', '#2c440f',
+  // Azul
+  '#bcdcf5', '#8cc0ea', '#4a90d9', '#2f6ea8', '#1d4d78', '#0f2f4a',
+  // Roxo
+  '#ddbde8', '#c394d0', '#8a4a9c', '#6b3579', '#4d2259', '#33133b',
+  // Vermelho
+  '#f5b8b8', '#e08a8a', '#c94a5a', '#a63441', '#7f222c', '#5a151c',
+  // Neutros (cinzas, branco e preto)
+  '#ffffff', '#d9dee3', '#a8b2bc', '#6b7680', '#3d454d', '#141619',
+];
+
+// =====================================================================
+// DICIONÁRIO DE EFEITOS — nome e descrição de cada atributo
+// =====================================================================
+
+export const EFEITOS_DESCRICOES = {
+  fis: { nome: 'Físico', descricao: 'Força muscular e resistência corporal' },
+  men: { nome: 'Mental', descricao: 'Inteligência, memória e poder arcano' },
+  soc: { nome: 'Social', descricao: 'Carisma, persuasão e liderança' },
+  vidaMax: { nome: 'Vida Máxima', descricao: 'Pontos de vida máximos do personagem' },
+  poderMax: { nome: 'Poder Máximo', descricao: 'Pontos de poder/mana máximos' },
+  defesa: { nome: 'Defesa', descricao: 'Reduz o dano recebido' },
+  regenVida: { nome: 'Regeneração de Vida', descricao: 'Vida recuperada por segundo' },
+  regenPoder: { nome: 'Regeneração de Poder', descricao: 'Poder recuperado por segundo' },
+  carga: { nome: 'Carga', descricao: 'Capacidade de inventário' },
+  poderMineracao: { nome: 'Poder de Mineração', descricao: 'Velocidade e eficiência ao minerar' },
+  poderPct: { nome: 'Poder (%)', descricao: 'Aumento percentual de poder' },
+  xpPct: { nome: 'XP (%)', descricao: 'Aumento percentual de experiência' },
+  ouroBonus: { nome: 'Bônus de Ouro', descricao: 'Ouro extra ganho' },
+  vendaPct: { nome: 'Venda (%)', descricao: 'Aumento percentual no valor de venda' },
+  reducaoDanoPct: { nome: 'Redução de Dano (%)', descricao: 'Redução percentual de dano recebido' },
+  alcanceConstrucao: { nome: 'Alcance de Construção', descricao: 'Distância máxima para construir' },
+  velocidadeMaquinaPct: { nome: 'Velocidade de Máquina (%)', descricao: 'Aumento percentual na velocidade de máquinas' },
+  escudoPct: { nome: 'Escudo (%)', descricao: 'Aumentual percentual de escudo' },
+  reparo: { nome: 'Reparo', descricao: 'Capacidade de reparar itens' },
+};
 
 // =====================================================================
 // ITENS  (recursos, blocos, ferramentas, equipamentos, maquinas, orbes)
@@ -192,7 +314,7 @@ export const CAMPOS_CLASSE = [
   { chave: 'nome', rotulo: 'Nome da Vocação', tipo: 'texto', obrigatorio: true },
   { chave: 'descricao', rotulo: 'Descrição', tipo: 'area', placeholder: 'Explique o papel da vocação no Império.' },
   { chave: 'imagem', rotulo: 'Imagem / retrato', tipo: 'imagem', pastaUpload: 'classes' },
-  { chave: 'cor', rotulo: 'Cor (hex, ex.: #d4af6a)', tipo: 'texto' },
+  { chave: 'cor', rotulo: 'Cor', tipo: 'cor' },
   { chave: 'nivelMin', rotulo: 'Nível mínimo', tipo: 'numero' },
   { chave: 'vidaBase', rotulo: 'Vida base', tipo: 'numero' },
   { chave: 'poderBase', rotulo: 'Poder base', tipo: 'numero' },
@@ -256,19 +378,48 @@ export const CAMPOS_RECEITA = [
 // =====================================================================
 
 export const CAMPOS_REINO = [
-  { chave: 'nome', rotulo: 'Nome do reino', tipo: 'texto', obrigatorio: true },
+  { chave: 'nome', rotulo: 'Nome do mundo', tipo: 'texto', obrigatorio: true },
   { chave: 'descricao', rotulo: 'Descrição', tipo: 'area' },
-  { chave: 'imagem', rotulo: 'Imagem do reino', tipo: 'imagem', pastaUpload: 'reinos' },
-  { chave: 'bioma', rotulo: 'Bioma', tipo: 'texto' },
+  { chave: 'imagem', rotulo: 'Imagem do mundo', tipo: 'imagem', pastaUpload: 'reinos' },
+
+  // ---- Geometria do mundo ----
+  { chave: 'tamanho', rotulo: 'Tamanho', tipo: 'select', opcoes: comRotulo(TAMANHOS_MUNDO),
+    dica: 'Define quantos blocos o mapa tem em cada lado.' },
+  { chave: 'largura', rotulo: 'Largura em blocos', tipo: 'numero',
+    dica: 'Sobrescreve o tamanho acima quando preenchido.' },
+  { chave: 'altura', rotulo: 'Altura em blocos', tipo: 'numero',
+    dica: 'Sobrescreve o tamanho acima quando preenchido.' },
+  { chave: 'seedBase', rotulo: 'Seed base', tipo: 'texto',
+    dica: 'Mesmo seed = mesmo mundo sempre. Deixe vazio para o jogo sortear.' },
+
+  // ---- Biomas que compõem este mundo ----
+  { chave: 'biomas', rotulo: 'Biomas do mundo', tipo: 'multiselec', opcoes: [],
+    fonte: 'biomas', dica: 'Cada bioma define seus próprios blocos e mobs nativos.' },
+  { chave: 'blocosNativos', rotulo: 'Blocos nativos extras', tipo: 'multiselec', opcoes: [],
+    fonte: 'blocos', dica: 'Blocos que aparecem em qualquer bioma deste mundo.' },
+  { chave: 'mobsNativas', rotulo: 'Mobs nativas do mundo', tipo: 'multiselec', opcoes: [],
+    fonte: 'monstros', dica: 'Criaturas que aparecem em qualquer bioma deste mundo.' },
+
+  // ---- Perigos e recompensa ----
   { chave: 'dificuldade', rotulo: 'Dificuldade (1-5)', tipo: 'numero' },
   { chave: 'faixaMin', rotulo: 'Nível mín.', tipo: 'numero' },
   { chave: 'faixaMax', rotulo: 'Nível máx.', tipo: 'numero' },
-  { chave: 'seedBase', rotulo: 'Seed base', tipo: 'texto', dica: 'Deixe vazio para o jogo sortear' },
   { chave: 'monstrosPossiveis', rotulo: 'Monstros possíveis', tipo: 'multiselec', opcoes: [],
-    dica: 'Preenchido ao clicar em "Ver monstros"' },
+    fonte: 'monstros', dica: 'Pool geral de spawn deste mundo.' },
   { chave: 'lootGlobal', rotulo: 'Loot do mundo', tipo: 'area',
     placeholder: 'pedra:70:3, madeira:70:4',
     dica: 'item:chance:quantidade', parse: parseLoot },
+  { chave: 'clima', rotulo: 'Clima', tipo: 'select',
+    opcoes: [
+      { valor: 'claro', rotulo: 'Sempre claro' },
+      { valor: 'noite', rotulo: 'Noite recorrente' },
+      { valor: 'chuva', rotulo: 'Chuva frequente' },
+      { valor: 'tempestade', rotulo: 'Tempestades' },
+      { valor: 'neblina', rotulo: 'Neblina' },
+    ] },
+  { chave: 'relogioMundo', rotulo: 'Relógio do mundo', tipo: 'area',
+    placeholder: 'ciclo:24,minutosDia:30,minutosNoite:15',
+    dica: 'ciclo = horas por dia · minutosDia/Noite = duração real de cada período. Vazio = usa o padrão.' },
 ];
 
 // =====================================================================
@@ -279,9 +430,18 @@ export const CAMPOS_ESTACAO = [
   { chave: 'nome', rotulo: 'Nome da estação', tipo: 'texto', obrigatorio: true, placeholder: 'Ex.: Mesa Alquímica' },
   { chave: 'descricao', rotulo: 'Descrição', tipo: 'area', placeholder: 'O que essa estação faz no jogo.' },
   { chave: 'imagem', rotulo: 'Imagem', tipo: 'imagem', pastaUpload: 'estacoes' },
+  { chave: 'cor', rotulo: 'Cor', tipo: 'cor' },
   { chave: 'nivelMin', rotulo: 'Nível mínimo para usar', tipo: 'numero' },
   { chave: 'custoPoder', rotulo: 'Custo de poder por uso', tipo: 'numero' },
-  { chave: 'cor', rotulo: 'Cor (hex, ex.: #7ba23f)', tipo: 'texto' },
+  { chave: 'processos', rotulo: 'Processos que realiza', tipo: 'listaProcessos',
+    opcoes: comDescricao(PROCESSOS_ESTACAO, ROTULOS_PROCESSO, DESCRICAO_PROCESSO),
+    dica: 'Mantenha marcado cada processo que a máquina executa. É isto que decide quais receitas aparecem nesta estação.' },
+  { chave: 'classesPermitidas', rotulo: 'Classes que podem usar', tipo: 'multiselec', opcoes: [],
+    fonte: 'classes', vazioSignifica: 'Todas as classes',
+    dica: 'Deixe tudo desmarcado para liberar para qualquer vocação.' },
+  { chave: 'slots', rotulo: 'Slots de receita simultânea', tipo: 'numero',
+    dica: 'Quantas receitas a máquina pode processar ao mesmo tempo.' },
+  { chave: 'consumoEnergia', rotulo: 'Consumo de energia por uso', tipo: 'numero' },
 ];
 
 // =====================================================================
@@ -338,6 +498,154 @@ export const CAMPOS_TALENTO = [
 ];
 
 // =====================================================================
+// BIOMAS
+// =====================================================================
+
+export const CAMPOS_BIOMA = [
+  { chave: 'nome', rotulo: 'Nome do bioma', tipo: 'texto', obrigatorio: true },
+  { chave: 'descricao', rotulo: 'Descrição', tipo: 'area',
+    dica: 'Aparece na wiki do jogador ao entrar neste bioma.' },
+  { chave: 'imagem', rotulo: 'Imagem', tipo: 'imagem', pastaUpload: 'biomas' },
+  { chave: 'tipo', rotulo: 'Tipo', tipo: 'select', opcoes: comRotulo(TIPOS_BIOMA) },
+  { chave: 'cor', rotulo: 'Cor', tipo: 'cor' },
+
+  // ---- Geração ----
+  { chave: 'peso', rotulo: 'Peso na geração', tipo: 'numero',
+    dica: 'Probabilidade relativa de este bioma aparecer num mundo. Maior = mais comum.' },
+  { chave: 'minX', rotulo: 'Área mínima X', tipo: 'numero' },
+  { chave: 'minY', rotulo: 'Área mínima Y', tipo: 'numero' },
+  { chave: 'dificuldade', rotulo: 'Dificuldade base (1-5)', tipo: 'numero' },
+  { chave: 'temperatura', rotulo: 'Temperatura', tipo: 'numero',
+    dica: 'Afeta crescimento de plantações e desgaste de equipamento.' },
+
+  // ---- Blocos ----
+  { chave: 'blocosNativos', rotulo: 'Blocos nativos', tipo: 'multiselec', opcoes: [],
+    fonte: 'blocos', dica: 'Blocos gerados naturalmente neste bioma.' },
+  { chave: 'chaveBloco', rotulo: 'Bloco de superfície', tipo: 'select', opcoes: [],
+    fonte: 'blocos', dica: 'O bloco que fica no topo do terreno.' },
+  { chave: 'chaveSubSolo', rotulo: 'Bloco de subsolo', tipo: 'select', opcoes: [],
+    fonte: 'blocos', dica: 'O bloco que fica logo abaixo da superfície.' },
+
+  // ---- Mobs ----
+  { chave: 'mobsNativos', rotulo: 'Mobs nativas', tipo: 'multiselec', opcoes: [],
+    fonte: 'monstros', dica: 'Criaturas que aparecem aqui por padrão.' },
+  { chave: 'densidadeMobs', rotulo: 'Densidade de mobs', tipo: 'numero',
+    dica: 'Spawns por área. 0 = bioma sem spawn natural.' },
+  { chave: 'npcsNativos', rotulo: 'NPCs nativos deste bioma', tipo: 'multiselec', opcoes: [],
+    fonte: 'npcs', dica: 'NPCs considerados habitantes deste bioma.' },
+];
+
+// =====================================================================
+// NPCs DO MUNDO
+// =====================================================================
+
+export const CAMPOS_NPC = [
+  { chave: 'nome', rotulo: 'Nome do NPC', tipo: 'texto', obrigatorio: true },
+  { chave: 'descricao', rotulo: 'Descrição', tipo: 'area',
+    dica: 'O que este NPC é no Império. O jogador lê isto ao interagir.' },
+  { chave: 'imagem', rotulo: 'Retrato', tipo: 'imagem', pastaUpload: 'npcs' },
+  { chave: 'cor', rotulo: 'Cor', tipo: 'cor' },
+
+  // ---- Onde ele vive ----
+  { chave: 'mundoId', rotulo: 'Mundo', tipo: 'select', opcoes: [], fonte: 'reinos',
+    dica: 'O NPC é nativo deste mundo.' },
+  { chave: 'biomaId', rotulo: 'Bioma', tipo: 'select', opcoes: [], fonte: 'biomas',
+    dica: 'Bioma onde ele fica. Deixe vazio para Anywhere no mundo.' },
+  { chave: 'posX', rotulo: 'Posição X (bloco)', tipo: 'numero',
+    dica: 'Definida no mapa quadriculado ao lado. Este campo espelha aquele valor.' },
+  { chave: 'posY', rotulo: 'Posição Y (bloco)', tipo: 'numero',
+    dica: 'Definida no mapa quadriculado ao lado.' },
+
+  // ---- Comportamento ----
+  { chave: 'movimento', rotulo: 'Padrão de movimento', tipo: 'select',
+    opcoes: [
+      { valor: 'parado', rotulo: 'Parado — nunca sai do ponto' },
+      { valor: 'suave', rotulo: 'Suave — 3 blocos e volta ao ponto' },
+      { valor: 'medio', rotulo: 'Médio — 7 blocos, 3 andadas, depois volta' },
+      { valor: 'alto', rotulo: 'Alto — 12 blocos, 5 andadas, depois volta' },
+    ],
+    dica: 'Define o raio e quantas andadas o NPC dá antes de retornar ao ponto fixo.' },
+
+  // ---- Tipos (checkbox) ----
+  { chave: 'tipos', rotulo: 'Funções deste NPC', tipo: 'multiselec',
+    opcoes: [
+      { valor: 'dialogo', rotulo: 'Tem diálogo', descricao: 'Fala com o jogador ao interagir.' },
+      { valor: 'missao', rotulo: 'Tem missão', descricao: 'Entrega e recebe quests.' },
+      { valor: 'loja', rotulo: 'Tem loja', descricao: 'Vende itens ao jogador.' },
+      { valor: 'movimenta', rotulo: 'Se movimenta', descricao: 'Anda pelo mapa conforme o padrão acima.' },
+      { valor: 'sempre_aparente', rotulo: 'Sempre aparente', descricao: 'Nunca some do mapa, nem em áreas remotas.' },
+    ],
+    dica: 'Marque uma ou várias. NPC de história pode ter diálogo e loja ao mesmo tempo.' },
+
+  // ---- Aparência ----
+  { chave: 'classeId', rotulo: 'Classe (aparência)', tipo: 'select', opcoes: [], fonte: 'classes',
+    dica: 'Define o visual do NPC no mapa.' },
+  { chave: 'tamanho', rotulo: 'Escala do NPC', tipo: 'numero',
+    dica: '1 = tamanho normal.' },
+
+  // ---- Inviolável (sempre ligado, por desenho) ----
+  { chave: 'inviolavel', rotulo: 'Inviolável', tipo: 'fixo', valorFixo: true,
+    dica: 'NPCs não tomam dano e não podem ser mortos. Regra fixa do jogo.' },
+
+  // ---- Diálogo ----
+  { chave: 'dialogo', rotulo: 'Diálogo padrão', tipo: 'area',
+    placeholder: 'Bom dia, viajante. Precisa de mantimentos?' },
+
+  // ---- Missões ----
+  { chave: 'missoes', rotulo: 'Missões que oferece', tipo: 'area',
+    placeholder: 'mata_20_slime:1,minere_ferro:1',
+    dica: 'missaoId:repetições. Vazio = este NPC não dá missões.' },
+
+  // ---- Loja ----
+  { chave: 'loja', rotulo: 'Itens da loja', tipo: 'area',
+    placeholder: 'espada_ferro:1:500,pocao_vida:5:120',
+    dica: 'itemId:quantidade:preço em ouro. Vazio = este NPC não vende nada.' },
+  { chave: 'lojaMoeda', rotulo: 'Moeda da loja', tipo: 'select',
+    opcoes: [
+      { valor: 'ouro', rotulo: 'Ouro' },
+      { valor: 'npc', rotulo: 'Moeda própria do NPC' },
+      { valor: 'item', rotulo: 'Troca por itens' },
+    ] },
+  { chave: 'lojaDesconto', rotulo: 'Desconto da loja (%)', tipo: 'numero' },
+];
+
+// =====================================================================
+// SERVIDORES
+// =====================================================================
+
+export const CAMPOS_SERVIDOR = [
+  { chave: 'nome', rotulo: 'Nome do servidor', tipo: 'texto', obrigatorio: true },
+  { chave: 'descricao', rotulo: 'Descrição', tipo: 'area' },
+  { chave: 'tipo', rotulo: 'Tipo', tipo: 'select', opcoes: comRotulo(TIPOS_SERVIDOR),
+    dica: 'Sobrevivência = sem trapaça · Criativo = recursos infinitos · PvP = combate entre jogadores · Coop = cooperative · Hardcore = morte permanente · RPG = regras de RPG.' },
+  { chave: 'regiao', rotulo: 'Região', tipo: 'texto',
+    placeholder: 'Brasil', dica: 'Usado para agrupar servidores na lista do jogador.' },
+  { chave: 'maxJogadores', rotulo: 'Máximo de jogadores', tipo: 'numero' },
+  { chave: 'status', rotulo: 'Status', tipo: 'select',
+    opcoes: [
+      { valor: 'aberto', rotulo: 'Aberto' },
+      { valor: 'fechado', rotulo: 'Fechado' },
+      { valor: 'manutencao', rotulo: 'Em manutenção' },
+    ] },
+
+  // Tudo abaixo é seleção de conteúdo. Vazio = o servidor NÃO oferece aquilo,
+  // porque a diferença entre "não configurado" e "proibido" importa quando o
+  // servidor serve a partidas competitivas com regras distintas.
+  { chave: 'classesPermitidas', rotulo: 'Classes liberadas', tipo: 'multiselec', opcoes: [],
+    fonte: 'classes', dica: 'Classes que podem ser escolhidas ao entrar neste servidor.' },
+  { chave: 'mundosPermitidos', rotulo: 'Mundos liberados', tipo: 'multiselec', opcoes: [],
+    fonte: 'reinos', dica: 'Mundos que podem ser visitados neste servidor.' },
+  { chave: 'estacoesPermitidas', rotulo: 'Estações liberadas', tipo: 'multiselec', opcoes: [],
+    fonte: 'estacoes', dica: 'Máquinas disponíveis para construção neste servidor.' },
+  { chave: 'biomasPermitidos', rotulo: 'Biomas liberados', tipo: 'multiselec', opcoes: [],
+    fonte: 'biomas', dica: 'Biomas que podem aparecer nos mundos deste servidor.' },
+  { chave: 'npcsPermitidos', rotulo: 'NPCs liberados', tipo: 'multiselec', opcoes: [],
+    fonte: 'npcs', dica: 'NPCs ativos neste servidor.' },
+  { chave: 'itensPermitidos', rotulo: 'Itens liberados', tipo: 'multiselec', opcoes: [],
+    fonte: 'blocos', dica: 'Itens e blocos que podem ser obtidos aqui.' },
+];
+
+// =====================================================================
 // Textos auxiliares para exibir valores estruturados nos campos de texto
 // =====================================================================
 
@@ -374,4 +682,7 @@ export const RESUMO = {
   talentos: (d) =>
     `${d.ramo || 'raiz'} · ${d.tipo ?? '—'} · ${d.custoPontos ?? 1}pt · nv ${d.nivelMin ?? 1}` +
     (d.preRequisitos?.length ? ` · requer ${d.preRequisitos.length}` : ''),
+  biomas: (d) => `${d.tipo ?? '—'} · ${(d.blocosNativos ?? []).length} blocos · ${(d.mobsNativos ?? []).length} mobs`,
+  npcs: (d) => `${(d.tipos ?? []).join(', ') || '—'} · movimento ${d.movimento ?? 'suave'}`,
+  servidores: (d) => `${d.tipo ?? '—'} · máx ${d.maxJogadores ?? 20} jogadores`,
 };
