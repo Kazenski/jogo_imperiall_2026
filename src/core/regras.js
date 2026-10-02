@@ -68,7 +68,7 @@ export function minerar({ catalogo, estado, itemId, forcaMineracao }) {
   const qtdMax = Math.max(1, Math.round(2 + multiplicador * 0.5));
   const qtd = qtdMin + Math.floor(Math.random() * (qtdMax - qtdMin + 1));
 
-  adicionarItem(estado.inventario, itemId, qtd, def.stackMax ?? 999);
+  adicionarItem(estado.inventario, itemId, qtd, def?.stackMax ?? 1000, [], def?.perecivel ?? false, def?.tempoEstragarSegundos ?? 0);
   estado.stats.blocosColetados = (estado.stats.blocosColetados ?? 0) + 1;
   estado.stats.itensColetados = (estado.stats.itensColetados ?? 0) + qtd;
 
@@ -88,7 +88,7 @@ export function derrubarBlocoDaBase({ estado, catalogo, col, linha }) {
 
   const def = catalogo?.indice?.itens?.[destruido.itemId];
   const qtd = 1;
-  adicionarItem(estado.inventario, destruido.itemId, qtd, def?.stackMax ?? 999, destruido.upgrades ?? []);
+  adicionarItem(estado.inventario, destruido.itemId, qtd, def?.stackMax ?? 1000, destruido.upgrades ?? [], def?.perecivel ?? false, def?.tempoEstragarSegundos ?? 0);
   estado.stats.blocosColetados = (estado.stats.blocosColetados ?? 0) + 1;
   return { ok: true, ganhos: [{ itemId: destruido.itemId, qtd }], xp: 2 };
 }
@@ -173,7 +173,7 @@ export function fabricar({ catalogo, estado, receitaId }) {
   const producao = [];
   for (const saida of receita.saida ?? []) {
     const def = catalogo.indice.itens[saida.itemId];
-    adicionarItem(estado.inventario, saida.itemId, saida.qtd ?? 1, def?.stackMax ?? 999);
+    adicionarItem(estado.inventario, saida.itemId, saida.qtd ?? 1, def?.stackMax ?? 1000, [], def?.perecivel ?? false, def?.tempoEstragarSegundos ?? 0);
     producao.push({ itemId: saida.itemId, qtd: saida.qtd ?? 1 });
     estado.stats.itensCriados = (estado.stats.itensCriados ?? 0) + (saida.qtd ?? 1);
   }

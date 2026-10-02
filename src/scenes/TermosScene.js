@@ -168,14 +168,20 @@ const mascara = this.make.graphics({ x: 0, y: 0 }, false);
         caixaSimples(this, trilhoX, corpoY + 4 + posDedal, 4, alturaDedal, 0xd4af6a, 2),
       );
 
-      const consumirRoda = this.input.on('wheel', (_p, _o, _dx, _dy, dy) => {
+      // Roda do mouse: Phaser 3.90 usa `this.input.on('wheel', callback)` onde o
+      // callback recebe (pointer, currentlyOver, dx, dy, dz). O `dy` e o delta
+      // vertical. `this.input` e o InputPlugin da cena, nao o manager.
+      const onRoda = (pointer, _over, _dx, _dy, dy) => {
         this.desloc[this.abaAtual] = Math.max(
           0,
           Math.min(maxDesloc, (this.desloc[this.abaAtual] ?? 0) + dy * 0.6),
         );
         this.montar();
-      });
-      this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => consumirRoda.off?.('wheel', consumirRoda));
+      };
+      this.input.on('wheel', onRoda);
+      this.events.once(Phaser.Scenes.Events.SHUTDOWN, () =>
+        this.input.off('wheel', onRoda),
+      );
     }
 
     // Ações
@@ -200,15 +206,20 @@ const mascara = this.make.graphics({ x: 0, y: 0 }, false);
     });
     this.raiz.add(btnSair.caixa);
 
+    // Texto "Ao aceitar..." - fica ACIMA dos botoes, com padding do painel.
+    // Antes estava em yAcao + 30 = y0 + h - 10, ou seja, COLADO na borda
+    // inferior do painel (que termina em y0 + h). Agora fica com 16px de
+    // margem do fundo do painel.
+    const yAceitar = y0 + h - 16 - 36; // 16px margem + ~20px altura do texto (duas linhas)
     this.raiz.add(
       uiTexto(
         this,
         cbx,
-        yAcao + 30,
+        yAceitar,
         'Ao aceitar você concorda com o tratamento de dados descrito na aba de Privacidade. O botão "Apagar meu progresso" está no Personagem (V).',
         { fontSize: '10px', color: PERGAMINHO, align: 'center', wordWrap: { width: w - 60 } },
       )
-        .setOrigin(0.5, 0)
+        .setOrigin(0.5, 1) // ancorado no bottom-center
         .setAlpha(0.6),
     );
   }

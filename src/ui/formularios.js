@@ -151,6 +151,7 @@ export function criarCampo(scene, opcoes) {
     altura = ALTURA_ENTRADA,
     pastaUpload = 'imagens',
     aoMudar = null,
+    chave = null,
   } = opcoes;
 
   const container = scene.add.container(x, y);
@@ -178,13 +179,13 @@ export function criarCampo(scene, opcoes) {
   const construir = () => {
     switch (tipo) {
       case 'select':
-        return campoSelect(scene, container, { x: 0, y: yCaixa, largura, altura: alturaCaixa, valor, opcoes: listaOpcoes, aoMudar });
+        return campoSelect(scene, container, { x: 0, y: yCaixa, largura, altura: alturaCaixa, valor, opcoes: listaOpcoes, aoMudar, chave });
       case 'multiselec':
-        return campoMultiselec(scene, container, { x: 0, y: yCaixa, largura, valor, opcoes: listaOpcoes, aoMudar });
+        return campoMultiselec(scene, container, { x: 0, y: yCaixa, largura, valor, opcoes: listaOpcoes, aoMudar, chave });
       case 'imagem':
-        return campoImagem(scene, container, { x: 0, y: yCaixa, largura, valor, pastaUpload, aoMudar });
+        return campoImagem(scene, container, { x: 0, y: yCaixa, largura, valor, pastaUpload, aoMudar, chave });
       default:
-        return campoDigitacao(scene, container, { x: 0, y: yCaixa, largura, altura: alturaCaixa, valor, tipo, placeholder, multilinha, aoMudar });
+        return campoDigitacao(scene, container, { x: 0, y: yCaixa, largura, altura: alturaCaixa, valor, tipo, placeholder, multilinha, aoMudar, chave });
     }
   };
 
@@ -226,7 +227,7 @@ export function criarCampo(scene, opcoes) {
 // ---------- digitacao ----------
 
 function campoDigitacao(scene, container, cfg) {
-  const { x, y, largura, altura, valor, tipo, placeholder, multilinha, aoMudar } = cfg;
+  const { x, y, largura, altura, valor, tipo, placeholder, multilinha, aoMudar, chave = null } = cfg;
 
   const caixa = caixaArredondada(scene, x, y, largura, altura, {
     raio: 7,
@@ -285,12 +286,32 @@ function campoDigitacao(scene, container, cfg) {
 
   const ler = () => dom?.el?.value ?? '';
 
+  // Foco persistente igual ao campoTexto.
+  const marcarFoco = () => {
+    scene._foco = { chave, inicio: dom?.el?.selectionStart ?? 0, fim: dom?.el?.selectionEnd ?? 0 };
+  };
+  dom?.el?.addEventListener('focus', marcarFoco);
+  dom?.el?.addEventListener('keyup', () => { if (scene._foco?.chave === chave) marcarFoco(); });
+  dom?.el?.addEventListener('click', () => { if (scene._foco?.chave === chave) marcarFoco(); });
+  dom?.el?.addEventListener('blur', () => { if (scene._foco?.chave === chave) scene._foco = null; });
+
   return {
     obter: ler,
     definir(v) {
       if (dom?.el) dom.el.value = v ?? '';
     },
+    chave,
     focar,
+    /** Devolve o foco e o cursor a este campo. */
+    restaurarFoco(inicio = 0, fim = inicio) {
+      if (!dom?.el || dom.el.readOnly || dom.el.disabled) return false;
+      if (!dom.el.isConnected) return false;
+      dom.el.focus();
+      const i = Math.min(inicio ?? 0, dom.el.value.length);
+      const f = Math.min(fim ?? i, dom.el.value.length);
+      try { dom.el.setSelectionRange(i, f); } catch {}
+      return true;
+    },
     destruir() {
       scene.scale.off(Phaser.Scale.Events.RESIZE, dom?.posicionar ?? (() => {}));
       dom?.el?.remove();
@@ -550,7 +571,7 @@ function campoMultiselec(scene, container, cfg) {
 // ---------- imagem (upload / URL) ----------
 
 function campoImagem(scene, container, cfg) {
-  const { x, y, largura, valor, pastaUpload, aoMudar } = cfg;
+  const { x, y, largura, valor, pastaUpload, aoMudar, chave = null } = cfg;
 
   let atual = String(valor ?? '');
   let chaveTextura = null;
@@ -722,10 +743,31 @@ function campoImagem(scene, container, cfg) {
 
   aplicarUrl(atual);
 
+  // Foco persistente igual ao campoTexto.
+  const marcarFoco = () => {
+    scene._foco = { chave, inicio: dom?.el?.selectionStart ?? 0, fim: dom?.el?.selectionEnd ?? 0 };
+  };
+  dom?.el?.addEventListener('focus', marcarFoco);
+  dom?.el?.addEventListener('keyup', () => { if (scene._foco?.chave === chave) marcarFoco(); });
+  dom?.el?.addEventListener('click', () => { if (scene._foco?.chave === chave) marcarFoco(); });
+  dom?.el?.addEventListener('blur', () => { if (scene._foco?.chave === chave) scene._foco = null; });
+
   return {
     obter: () => atual,
     definir(v) {
       aplicarUrl(v);
+    },
+    chave,
+    focar: () => dom?.el?.focus(),
+    /** Devolve o foco e o cursor a este campo. */
+    restaurarFoco(inicio = 0, fim = inicio) {
+      if (!dom?.el || dom.el.readOnly || dom.el.disabled) return false;
+      if (!dom.el.isConnected) return false;
+      dom.el.focus();
+      const i = Math.min(inicio ?? 0, dom.el.value.length);
+      const f = Math.min(fim ?? i, dom.el.value.length);
+      try { dom.el.setSelectionRange(i, f); } catch {}
+      return true;
     },
     destruir() {
       inputArquivo.remove();

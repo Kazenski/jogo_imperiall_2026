@@ -51,6 +51,8 @@ export function estadoInicial() {
       diasSobrevividos: 0,
       portaisConstruidos: 0,
     },
+    // Posição do jogador no mundo (salva entre sessões)
+    posicao: { x: 0, y: 0 },
   };
 }
 
@@ -139,8 +141,17 @@ export function novoUidInventario(inv) {
   return uid;
 }
 
-/** Adiciona itens, empilhando quando possivel. */
-export function adicionarItem(inv, itemId, qtd = 1, stackMax = 999, upgrades = []) {
+/** Adiciona itens, empilhando quando possivel.
+ * 
+ * Regras de empilhamento:
+ * - Padrao: ate 1000 por pilha (configuravel via `stackMax` do item).
+ * - Itens com upgrades: nunca empilham (cada pilha tem seu historico).
+ * - Pereciveis (`perecivel: true` + `tempoEstragarSegundos`): so empilham se
+ *   a `dataValidade` for IGUAL (ate o segundo). Validades diferentes = pilhas
+ *   separadas, para que o jogador nao perca comida fresca misturada com velha.
+ * - Ao criar item perecivel, o jogo define `dataValidade = Date.now() + tempoEstragarSegundos * 1000`.
+ */
+export function adicionarItem(inv, itemId, qtd = 1, stackMax = 1000, upgrades = [], perecivel = false, tempoEstragarSegundos = 0) {
   inv.itens ??= [];
   if (upgrades?.length) {
     // Itens com upgrade nunca empilham: cada pilha tem seu proprio historico.
@@ -155,13 +166,32 @@ export function adicionarItem(inv, itemId, qtd = 1, stackMax = 999, upgrades = [
     return inv;
   }
 
-  const existente = inv.itens.find((p) => p.itemId === itemId && !p.upgrades?.length);
+  const dataValidade = perecivel && tempoEstragarSegundos > 0
+    ? Date.now() + tempoEstragarSegundos * 1000
+    : null;
+
+  // Procura pilha existente compativel: mesmo item, sem upgrades, e (se perecivel) mesma validade.
+  const existente = inv.itens.find((p) => {
+    if (p.itemId !== itemId) return false;
+    if (p.upgrades?.length) return false;
+    if (perecivel && dataValidade !== null) {
+      return p.dataValidade === dataValidade;
+    }
+    return !perecivel; // nao perecivel empilha com qualquer outro nao perecivel
+  });
+
   if (existente && existente.qtd + qtd <= stackMax) {
     existente.qtd += qtd;
     return inv;
   }
 
-  inv.itens.push({ uid: novoUidInventario(inv), itemId, qtd, upgrades: [] });
+  inv.itens.push({
+    uid: novoUidInventario(inv),
+    itemId,
+    qtd,
+    upgrades: [],
+    ...(dataValidade !== null ? { dataValidade } : {}),
+  });
   return inv;
 }
 

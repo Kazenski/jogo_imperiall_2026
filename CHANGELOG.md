@@ -7,157 +7,105 @@ Este jogo está em desenvolvimento aberto. Se encontrar algo quebrado, o
 caminho mais rápido é relatar com o que você estava fazendo na tela.
 
 --- 
- 
-## Atualização — Refinamento de base, Wiki e Talentos
+
+## Atualização — Mundo maior, portal seu, itens que fazem sentido
 
 *Outubro de 2026*
 
-Desta vez a atualização não é sobre número grande. É sobre **você conseguir
-entender o que está acontecendo** — e sobre o jogo não te cobrar nada sem
-explicar.
+Esta atualização muda **onde você nasce**, **onde seu portal fica** e **como
+seus itens se organizam**. São mudanças que você sente na hora de jogar.
 
-### Chegou: a Wiki do Império (tecla H)
+### Chegou: você nasce onde parou
 
-Aperte **H** a qualquer momento. Isso abre a Wiki do Império, que é o livro de
-referência do jogo inteiro:
+Antes, toda vez que entrava no mundo você aparecia no centro do mapa — muitas
+vezes no meio de monstros. Agora **o jogo lembra sua posicao**. Saiu perto da
+sua base? Volta la. Estava explorando longe? Continua de la. A posicao e
+salva automaticamente a cada 10 segundos (se voce andou) e quando voce fecha
+o jogo.
 
-- **Controles** — todas as teclas, o que cada uma faz
-- **Itens** — o que cada item é, para que serve, o que ele rende quando você
-  extrai e quais orbes aceita
-- **Talentos** — todas as ramificações, o que cada uma faz e o que vem antes
-- **Classes, Monstros, Reinos, Orbes e Conquistas**
+### Chegou: mapa **muito maior** (60x44 tiles)
 
-Você pode **pesquisar** dentro da wiki. Escreve o nome do item ou do talento e
-ele te leva direto.
+O mundo cresceu de 34x26 para **60x44 tiles**. Sao 2640x1936 pixels de
+area jogavel — quase **6x mais espaco**.
+- Mais biomas para explorar
+- Bases maiores sem ficar apertado
+- Mais nos de recurso, mais monstros, mais segredos
+- Camara segue voce suavemente, sem travar nas bordas
 
-Um detalhe importante: **tudo o que você lê na wiki foi escrito por quem
-administra o jogo.** Item sem descrição aparece com os números em vez de
-vazio — mas a explicação boa depende de alguém escrever. Quanto mais coisa
-cadastrada, melhor a wiki fica.
+### Chegou: seu Portal, seu lugar (Shift+P)
 
-### Chegou: tela de criação de personagem
+O Portal Arcano da sua base agora tem **efeitos visuais novos**: aro runico
+girando, brilho pulsante, particulas de essencia arcana subindo, runas
+orbitando, placa flutuante. Fica bonito de verdade.
 
-Antes de entrar no mundo, você agora **cria o seu personagem**. Escolhe o nome,
-a raça e a vocação.
+E o melhor: **voce escolhe onde ele fica**. Aperte **Shift+P** para alternar:
+direita -> esquerda -> cima -> baixo. A escolha e salva e persiste entre
+sessoes. Ninguem mais vai colocar o portal em cima da sua forja.
 
-Isso não é enfeite. O motivo é prático: o mundo genera criaturas ao redor de
-quem entra, e antes você aparecia no meio delas sem ter decided nada. Agora
-você decide primeiro.
+### Melhorou: itens empilham ate 1.000 + alimentos pereciveis
 
-São quatro raças: **Humano do Norte**, **Anão da Forja**, **Elfo do Véu** e
-**Orc do Sul**. Cada uma com sua história.
+- Pilha padrao subiu para **1.000** (era 999).
+- **Alimentos pereciveis** (novo cadastro no admin: `perecivel: true` +
+  `tempoEstragarSegundos`): ao pegar ou fabricar, o jogo carimba a
+  `dataValidade`. Pilhas com validade **diferente nao se unem** — sua maca
+  fresca nao vira mingau misturado com a de ontem.
+- Itens com upgrade continuam nao empilhando (cada um tem seu historico).
 
-Uma coisa importante sobre a raça: **nenhuma delas dá bônus de atributo.** A
-raça é sobre identidade, não sobre qual número sai maior na ficha. Se você
-quer força, isso vem da vocação e dos talentos — e a escolha fica sendo sua de
-verdade.
+### Melhorou: Painel administrativo (F2) — digitar nao trava mais
 
-Também dá para voltar nessa tela depois para ajustar seu personagem. Nome e
-raça travam a partir do nível 3.
+- **Foco que sobrevive**: filtrar a lista, trocar de aba, redesenhar a tela —
+  o cursor **continua no campo** onde voce estava digitando. Antes a terceira
+  letra ia para o espaco.
+- **Upload de imagem com preview instantaneo**: escolha o arquivo e veja na
+  hora (antes de subir pro Storage). Funciona ate offline (data URL).
+- **Busca ao vivo**: digita 2 letras e a lista ja filtra (debounce 160ms).
+- **Mesma coisa na Wiki (H)**: busca em todas as secoes mantendo o foco.
 
-### Melhorou: Talentos
+### Correcao: scroll dos Termos e "Ao aceitar..."
 
-A árvore de talentos foi refeita do zero. Agora ela tem:
+- A roda do mouse **agora rola** o texto dos termos/privacidade (geometria
+  mask + wheel listener).
+- O texto "Ao aceitar voce concorda..." subiu — nao fica mais colado na
+  borda amarela do painel.
 
-- **Ramificações coloridas** — os talentos se agrupam em caminhos que você
-  consegue distinguir de longe
-- **Ficha ao clicar** — clique uma vez e veja o que o talento faz, o que
-  precisa vir antes, e por que está travado
-- **Pré-requisitos reais** — além de exigir outros talentos, um talento pode
-  exigir **atributo**. "Só se seu Físico chegar a 5." Isso significa que a
-  ordem em que você distribui seus pontos importa
-- **Respec gratuito** — errou a ordem? Redefinir a árvore não custa nada
+### Correcao: busca da Wiki (H) mantem foco
 
-Detalhe de uso: **clique uma vez para ler, clique duas vezes para liberar.** É
-proposital — liberar um talento gasta ponto e não dá para desfazer com um
-clique acidental, então o gesto é duplo.
-
-### Melhorou: Fabricação
-
-A oficina foi reorganizada. As estações agora quebram em linhas quando a tela
-é estreita (antes saíam da borda), a lista tem rolagem, e o painel da direita
-mostra **o que falta** — quanto de cada insumo você tem e quanto ainda
-precisa.
-
-### Corrigido: a tela estava torta
-
-Se algum painel parecia desalinhado, ou se os campos do painel administrativo
-não apareciam direito, a causa era uma conta errada de posição no desenho das
-caixas. Não era estilo, era geometria — e agora está corrigida na origem.
-
-### Corrigido: talento criado no painel sumia
-
-Se você é administrador: **talentos novos que você cadastrava não apareciam em
-nenhuma árvore.** O registro era salvo, o painel confirmava — e o jogo não
-mudava. Corrigido.
-
-### Melhorou: Painel administrativo (F2)
-
-O painel de administração foi reconstruído para dar menos trabalho:
-
-- **Formulários simples e em duas colunas**, com todos os campos visíveis
-- **Upload de imagem com preview** — você vê a imagem antes de salvar
-- **Nada de campo mágico**: cada tipo de cadastro tem exatamente os campos que
-  precisa, com o texto explicando o que cada um faz
-- **Aviso antes de apagar**: se um item é usado em várias receitas, ou se um
-  talento é pré-requisito de outros, você é avisado na hora, com a contagem
-- **Abas novas: Portais e Jogadores.** A aba Jogadores promove e rebaixa
-  administradores. A aba Portais publica ou esconde a base de alguém sem
-  apagar o progresso da pessoa
-
-### Termos de uso e privacidade
-
-Passamos a pedir aceite dos Termos de Uso e da Política de Privacidade na
-primeira vez que você entra com conta. O aceite é versionado — quando o
-documento mudar, você vai ser avisado de novo.
-
-Você também pode **apagar tudo** que temos sobre você, direto no painel do
-Personagem (**V**), no rodapé: **"Apagar meu progresso"**. Apaga a conta de
-jogo, sua base e o seu portal. Não dá para desfazer, então há uma confirmação
-com a lista do que vai sumir.
-
-> Aviso honesto: estes textos são um rascunho de trabalho. Ainda precisam passar
-> por um advogado habilitado antes de o jogo ser aberto ao público. Preferimos
-> dizer isso agora a descobrir depois.
-
-### Detalhes menores que importam
-
-- **ESC não desloga mais.** Ele fecha o painel que está aberto.
-- **Fechar painel** não confunde mais com sair do jogo.
-- Ao desbloquear um talento, o mundo **atualiza na hora** — o bônus aparece no
-  jogo, não só na ficha.
-
-### Correções de conhecido
-
-Estamos de olho em um caso em que o jogo às vezes pede login de novo
-inesperadamente. Já corrigimos três causas possíveis, mas **não conseguimos
-reproduzir ainda**. Se acontecer com você, por favor relate — esse tipo de
-problema só aparece quando a gente tenta replicar, e o relato ajuda mais do que
-a tentativa.
+Digitar na busca da wiki nao derruba mais o campo no meio da palavra.
 
 ---
 
-## Ainda está em construção
+### Recap das novidades anteriores (caso tenha perdido)
 
-Para não ter surpresa, o que **não** está pronto:
+- **Wiki do Imperio (H)**: 9 secoes, busca cruzada, "Ao extrair:" mostra o que
+  o bloco vira.
+- **Criacao de personagem**: nome, 4 racas, vocacao, preview de stats.
+- **Talentos refeitos**: ramos coloridos, ficha ao clicar, pre-requisitos de
+  atributo, duplo-clique para liberar, respec gratis.
+- **Fabricacao**: layout 2 colunas, abas com quebra de linha, insumos faltando
+  em destaque.
+- **Admin (F2)**: 9 abas, formularios 2 colunas, upload imagem com preview,
+  avisos de dependencia ao apagar, abas Portais e Jogadores.
+- **Termos/LGPD**: 12+6 secoes, versao no documento, botao "Apagar meu
+  progresso" no Personagem (V).
+- **Racas**: 4 opcoes (Humano, Anao, Elfo, Orc) — **sem bonus de atributo**,
+  identidade pura.
 
-- **Combate automático e missões** — desenhados, em construção
-- **Painel administrativo testado de ponta a ponta** — foi reescrito, mas ainda
-  estamos verificando campo por campo
-- **Revisão visual dos menus restantes** — Reinos, Portais, Personagem
-- **Textos legais finais** — dependem de parecer jurídico
+---
 
-Nada disso foi anunciado como pronto porque ainda não está.
+## Ainda em construcao
+
+- Combate automatico e missoes
+- Teste ponta-a-ponta do admin
+- Revisao visual: Reinos, Portais, Personagem
+- Textos legais finais (precisam de advogado)
 
 ---
 
 ## Como ajudar
 
-1. **Jogue e conte o que quebrou.** Um relato com a tela e o que você estava
-   fazendo vale mais que um relatório formal.
-2. **Se tiver conta no Google**, entre sempre pela mesma conta — o progresso
-   fica salvo e sincroniza entre os dispositivos.
-3. **Cadastre conteúdo no painel.** A wiki fica boa na medida em que item,
-   talento e monstro têm descrição e imagem escrita.
+1. **Jogue e relate** — tela + o que fazia vale mais que relatorio formal.
+2. **Use a mesma conta Google** — progresso salva e sincroniza.
+3. **Cadastre no admin** — a wiki so fica boa se item/talento/monstro tem
+   descricao e imagem.
 
-Obrigado por construir o Império com a gente.
+Obrigado por construir o Imperio com a gente.

@@ -39,7 +39,7 @@ npm run dev                    # http://localhost:5173/jogo_imperiall_2026/
 
 Sem `.env.local` o jogo **funciona em modo local**: salva o progresso no
 `localStorage` e usa a semente de dados embutida. É o jeito mais rápido de
- mexer no layout sem depender de rede.
+mexer no layout sem depender de rede.
 
 | Comando | O que faz |
 | --- | --- |
@@ -51,7 +51,7 @@ Sem `.env.local` o jogo **funciona em modo local**: salva o progresso no
 ### Variáveis de ambiente
 
 Todas prefixadas com `VITE_FIREBASE_`. A configuração do Firebase Web **não é
-segredo** — ela vai parar no bundle de qualquer jeito. O que protege os dados
+secreto** — ela vai parar no bundle de qualquer jeito. O que protege os dados
 são as Firestore Rules (`firestore.rules`), não estas variáveis.
 
 O `.env.local` está no `.gitignore` e **nunca** deve ser commitado. No GitHub
@@ -68,10 +68,10 @@ A ordem das telas é uma **regra**, não preferência de layout:
 Boot (texturas procedurais)
   └─> Login ──> Termos ──> Criação do personagem ──> Mundo
                  (LGPD)       (não ser atacado)
-                                      │
-                                      └─> painéis: Mochila · Talentos ·
-                                          Fabricação · Reinos · Wiki (H) ·
-                                          Personagem · Admin (F2)
+                                       │
+                                       └─> painéis: Mochila · Talentos ·
+                                           Fabricação · Reinos · Wiki (H) ·
+                                           Personagem · Admin (F2)
 ```
 
 Por que cada etapa existe:
@@ -84,6 +84,18 @@ Por que cada etapa existe:
 - **Wiki como tecla H** — toda a escrita do administrador (`descricao`,
   `imagem`) é lida de lá. Se o admin não escreveu, a wiki mostra os campos
   numéricos em vez de um cartão vazio.
+
+### Novidades no fluxo (Out/2026)
+
+- **Posição persistente** — o jogador **nasce onde parou**. `estado.posicao`
+  salva a cada 10s (se moveu >20px) e no shutdown de `WorldScene`.
+- **Mapa 60x44** — área 6x maior (2640x1936). Mais biomas, bases maiores.
+- **Portal posicionável** — Shift+P alterna 4 posições (dir/esq/cima/baixo),
+  salvo em `estado.portalOffsetIdx`. Efeitos visuais: aro rúnico, partículas,
+  runas orbitando, placa flutuante.
+- **Itens até 1k + perecíveis** — `stackMax` padrão 1000. Campo `perecivel` +
+  `tempoEstragarSegundos` no cadastro; `dataValidade` carimbada na criação;
+  pilhas só unem se validade **exatamente igual**.
 
 ---
 
@@ -320,7 +332,7 @@ npm test
 
 - integridade do catálogo (ids únicos, referências de receita e loot válidas,
   nenhum talento órfão);
-- **toda celula da árvore tem no máximo um talento** (senão a linha de um
+- **toda célula da árvore tem no máximo um talento** (senão a linha de um
   cobre o nome do outro);
 - o pre-requisito de atributo de ponta a ponta: bloqueia, explica o motivo,
   libera quando o ponto é investido, desconta o custo;
@@ -330,6 +342,10 @@ npm test
 - o documento legal: versão, data, canal de contato e cada direito do titular
   nomeado;
 - as raças: ids únicos, textos preenchidos, padrão existente.
+- **chamadas para funções inexistentes** — varre `src/scenes`, `src/ui`,
+  `src/core`, `src/dados` e acusa qualquer função chamada que não existe
+  (nem declarada, nem importada, nem global). Já pegou `this.montar()` vs
+  `redimensionar()` e `corDeNome()` inexistente.
 
 Ao mexer em `schemaAdmin.js`, `legal.js` ou `racas.js`, rode `npm test` antes
 de olhar no navegador.

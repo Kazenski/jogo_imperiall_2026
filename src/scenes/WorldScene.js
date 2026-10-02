@@ -55,11 +55,22 @@ import {
  */
 const PAINEIS_SOBREPOSTOS = ['Status', 'Inventario', 'Talentos', 'Fabricacao', 'Reinos', 'Ajuda', 'Admin'];
 
-const COLUNAS = 34;
-const LINHAS = 26;
+// Mapa maior: mais espaco para explorar, bases maiores, mais recursos.
+// 60x44 = 2640x1936 (antes 34x26 = 1088x832).
+const COLUNAS = 60;
+const LINHAS = 44;
 const TAMANHO = TAMANHO_BLOCO;
 const LARGURA_TILEMAP = COLUNAS * TAMANHO;
 const ALTURA_TILEMAP = LINHAS * TAMANHO;
+
+// Offsets do portal: o jogador escolhe onde o portal fica (cicla com a tecla P).
+// 0 = direita, 1 = esquerda, 2 = cima, 3 = baixo.
+const PORTAL_OFFSETS = [
+  { dx: TAMANHO * 3.2, dy: 0 },    // direita
+  { dx: -TAMANHO * 3.2, dy: 0 },   // esquerda
+  { dx: 0, dy: -TAMANHO * 3.2 },   // cima
+  { dx: 0, dy: TAMANHO * 3.2 },    // baixo
+];
 
 export class WorldScene extends Phaser.Scene {
   constructor() {
@@ -214,8 +225,14 @@ export class WorldScene extends Phaser.Scene {
   }
 
   criarJogador() {
+    // Usa posição salva ou centro do mapa como fallback.
+    // A posição é salva em `this.estado.posicao = { x, y }` pelo loop de jogo
+    // e na saida da cena.
+    const spawnX = this.estado?.posicao?.x ?? LARGURA_TILEMAP / 2;
+    const spawnY = this.estado?.posicao?.y ?? ALTURA_TILEMAP / 2 + 120;
+
     this.jogador = this.physics.add
-      .sprite(LARGURA_TILEMAP / 2, ALTURA_TILEMAP / 2 + 120, TEXTURAS.JOGADOR)
+      .sprite(spawnX, spawnY, TEXTURAS.JOGADOR)
       .setOrigin(0.5, 1)
       .setCollideWorldBounds(true)
       .setDamping(true)
@@ -373,23 +390,71 @@ export class WorldScene extends Phaser.Scene {
   /**
    * Portal Arcanos da base.
    *
-   * Fica AO LADO do jogador (antes ficava 90px abaixo, o que parecia um item
-   * no chao e nao um portal). E clicavel, e entra na lista de alvos do `E`.
+   * Fica ao lado do jogador na posicao escolhida (cicla com tecla P).
+   * E clicavel, e entra na lista de alvos do `E`.
    */
   criarPortal() {
-    const x = this.jogador.x + TAMANHO * 3.2;
-    const y = this.jogador.y;
+    this.portalOffsetIdx = this.estado?.portalOffsetIdx ?? 0;
+    const off = PORTAL_OFFSETS[this.portalOffsetIdx];
+    const x = this.jogador.x + off.dx;
+    const y = this.jogador.y + off.dy;
 
+    // Aro exterior (runico) — gira devagar.
+    const aro = this.add.graphics();
+    aro.fillStyle(0x7a4fd4, 0.12);
+    aro.fillCircle(0, 0, 84);
+    this.portalAro = this.add.container(x, y, [aro]).setDepth(y - 3);
+    this.tweens.add({
+      targets: aro,
+      angle: 360,
+      duration: 20000,
+      repeat: -1,
+      ease: 'Linear',
+    });
+
+    // Brilho pulsante central.
     const brilho = this.add.circle(x, y - 22, 72, 0x7a4fd4, 0.14).setDepth(y - 2);
     this.portalBrilho = brilho;
+
+    // Portal principal.
     this.portal = this.add
       .image(x, y, TEXTURAS.PORTAL)
       .setOrigin(0.5, 1)
       .setDepth(y)
       .setInteractive({ useHandCursor: true });
 
+    // Anel de runas orbitando (particulas decorativas).
+    this.portalRunas = this.add.particles(x, y - 14, TEXTURAS.PARTICULA, {
+      speed: 0,
+      lifespan: 3000,
+      scale: { start: 0.5, end: 0 },
+      alpha: { start: 0.6, end: 0 },
+      tint: 0xc9a6ff,
+      frequency: 800,
+      quantity: 3,
+      emitZone: {
+        type: 'edge',
+        source: new Phaser.Geom.Circle(0, 0, 56),
+        quantity: 3,
+      },
+    }).setDepth(y - 1);
+
+    // Particulas subindo (essencia arcana).
+    this.particulasPortal = this.add
+      .particles(x, y - 14, TEXTURAS.PARTICULA, {
+        speedY: { min: -80, max: -30 },
+        speedX: { min: -18, max: 18 },
+        lifespan: 2000,
+        scale: { start: 0.8, end: 0 },
+        alpha: { start: 0.9, end: 0 },
+        tint: 0xc9a6ff,
+        frequency: 100,
+        quantity: 1,
+      })
+      .setDepth(y - 1);
+
     // Placa de identificacao acima do portal.
-    const placa = caixaArredondada(this, x, y - 62, 116, 24, {
+    const placa = caixaArredondada(this, x, y - 62, 128, 24, {
       raio: 7,
       preenchimento: 0x1a1030,
       alfa: 0.9,
@@ -399,7 +464,7 @@ export class WorldScene extends Phaser.Scene {
     });
     placa.add(
       this.add
-        .text(0, 0, 'PORTAL [E]', {
+        .text(0, 0, 'PORTAL [E]  mover [P]', {
           fontFamily: 'system-ui, sans-serif',
           fontSize: '11px',
           color: '#c9a6ff',
@@ -409,6 +474,7 @@ export class WorldScene extends Phaser.Scene {
     placa.setDepth(y + 1);
     this.portalPlaca = placa;
 
+    // Animacoes: pulso do portal + brilho + rotacao do aro.
     this.tweens.add({
       targets: this.portal,
       scaleX: 1.06,
@@ -426,19 +492,13 @@ export class WorldScene extends Phaser.Scene {
       repeat: -1,
       ease: 'Sine.InOut',
     });
-
-    this.particulasPortal = this.add
-      .particles(x, y - 14, TEXTURAS.PARTICULA, {
-        speedY: { min: -70, max: -25 },
-        speedX: { min: -14, max: 14 },
-        lifespan: 1800,
-        scale: { start: 0.7, end: 0 },
-        alpha: { start: 0.9, end: 0 },
-        tint: 0xc9a6ff,
-        frequency: 120,
-        quantity: 1,
-      })
-      .setDepth(y - 1);
+    this.tweens.add({
+      targets: this.portalAro,
+      angle: 360,
+      duration: 30000,
+      repeat: -1,
+      ease: 'Linear',
+    });
 
     // Clique abre o painel de portais; hover destaca o aro.
     this.portal.on('pointerover', () => {
@@ -458,7 +518,7 @@ export class WorldScene extends Phaser.Scene {
   }
 
   /**
-   * Reposiciona o portal ao LADO do jogador.
+   * Reposiciona o portal ao LADO do jogador conforme offset escolhido.
    *
    * Fica num metodo a parte de proposito: `update()` repositiona todo frame, e
    * a versao anteriorHardcodava `jogador.y + 90` la dentro, jogando o portal de
@@ -467,14 +527,17 @@ export class WorldScene extends Phaser.Scene {
    */
   posicionarPortal() {
     if (!this.portal) return;
-    const x = this.jogador.x + TAMANHO * 3.2;
-    const y = this.jogador.y;
+    const off = PORTAL_OFFSETS[this.portalOffsetIdx ?? 0];
+    const x = this.jogador.x + off.dx;
+    const y = this.jogador.y + off.dy;
 
     this.portal.setPosition(x, y).setDepth(y);
     this.portalAlvo = { x, y };
     this.particulasPortal?.setPosition(x, y - 14).setDepth(y - 1);
+    this.portalRunas?.setPosition(x, y - 14).setDepth(y - 1);
     this.portalBrilho?.setPosition(x, y - 22).setDepth(y - 2);
     this.portalPlaca?.setPosition(x, y - 62).setDepth(y + 1);
+    this.portalAro?.setPosition(x, y).setDepth(y - 3);
   }
 
   // ---------- interface ----------
@@ -548,6 +611,11 @@ export class WorldScene extends Phaser.Scene {
     this.scale.on(Phaser.Scale.Events.RESIZE, this.aoRedimensionar, this);
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
       this.scale.off(Phaser.Scale.Events.RESIZE, this.aoRedimensionar, this);
+      // Salva posicao final ao sair do mundo.
+      if (this.uid && this.jogador?.active) {
+        this.estado.posicao = { x: Math.round(this.jogador.x), y: Math.round(this.jogador.y) };
+        salvarProgresso(this.uid, this.estado).catch(() => {});
+      }
     });
   }
 
@@ -846,6 +914,10 @@ export class WorldScene extends Phaser.Scene {
     this.input.keyboard.on('keydown-C', () => this.abrirFabricacao());
     this.input.keyboard.on('keydown-R', () => this.abrirReinos());
     this.input.keyboard.on('keydown-P', () => this.abrirPainelDePortais());
+    // Shift+P alterna a posicao do portal (direita -> esquerda -> cima -> baixo).
+    this.input.keyboard.on('keydown-P', (ev) => {
+      if (ev.shiftKey) this.ciclarPortalOffset();
+    });
     this.input.keyboard.on('keydown-V', () => this.abrirStatus());
     this.input.keyboard.on('keydown-H', () => this.abrirAjuda());
 
@@ -1165,6 +1237,17 @@ export class WorldScene extends Phaser.Scene {
     );
   }
 
+  /** Alterna a posicao do portal: direita -> esquerda -> cima -> baixo. */
+  ciclarPortalOffset() {
+    this.portalOffsetIdx = ((this.portalOffsetIdx ?? 0) + 1) % PORTAL_OFFSETS.length;
+    this.estado.portalOffsetIdx = this.portalOffsetIdx;
+    const nomes = ['direita', 'esquerda', 'cima', 'baixo'];
+    this.mostrarToast(`Portal movido para a ${nomes[this.portalOffsetIdx]}.`);
+    this.posicionarPortal();
+    // Persiste a preferencia.
+    if (this.uid) this.persistir().catch(() => {});
+  }
+
   // ---------- paineis (implementados nas cenas seguintes) ----------
 
   /** V: painel do personagem (equipamento, atributos e apelido). */
@@ -1351,6 +1434,24 @@ export class WorldScene extends Phaser.Scene {
 
     // IA dos monstros.
     this.atualizarMonstros(dt);
+
+    // ---- Salva posicao periodicamente (a cada 10s) e na saida ----
+    // So salva se ha uid (jogador logado) e a posicao mudou significativamente.
+    if (this.uid && this.jogador?.active) {
+      const agora = time;
+      if (!this.ultimoSavePos || agora - this.ultimoSavePos > 10000) {
+        const pos = { x: Math.round(this.jogador.x), y: Math.round(this.jogador.y) };
+        const ant = this.estado.posicao ?? { x: 0, y: 0 };
+        const dx = pos.x - ant.x;
+        const dy = pos.y - ant.y;
+        if (dx * dx + dy * dy > 400) { // ~20 pixels de diferenca
+          this.estado.posicao = pos;
+          this.ultimoSavePos = agora;
+          // Dispara salvamento assincrono sem bloquear o frame.
+          salvarProgresso(this.uid, this.estado).catch(() => {});
+        }
+      }
+    }
   }
 
   atualizarMonstros(dt) {

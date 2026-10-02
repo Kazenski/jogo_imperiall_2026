@@ -11,42 +11,56 @@ Formato inspirado em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/)
 
 ---
 
-## [Não publicado] — Base editorial e de conformidade
+## [Não publicado] — Base editorial, conformidade e melhorias de gameplay
 
 Estado atual do repositório: **não commitado, não publicado**. Tudo abaixo
 existe localmente e passa em `npm run build` e `npm test`.
 
 ### Adicionado
 
-#### Wiki do Império — `src/scenes/AjudaScene.js`
+#### Persistência de posição no mundo — `src/core/personagem.js`, `src/scenes/WorldScene.js`
 
-Tecla **H** abre um modal com nove seções (Controles, Itens, Talentos, Classes,
-Monstros, Reinos, Orbes, Conquistas) e busca cruzada.
+O jogador agora **nasce onde parou**. A posicao `estado.posicao = { x, y }` e
+salva periodicamente (a cada 10s se moveu >20px) e no shutdown da cena
+`WorldScene`. No proximo login, `criarJogador()` usa a posicao salva em vez do
+centro do mapa. Resolve o problema de "sempre aparecer no mesmo lugar e ser
+atacado por monstros".
 
-Toda a escrita vem do catálogo do administrador (`descricao`, `imagem`). Quando
-o admin não escreveu nada, a wiki cai para os campos numéricos em vez de
-mostrar um cartão vazio — um item sem descrição é legível pelo número, um item
-sem nada não é.
+#### Mapa maior e portal posicionavel — `src/scenes/WorldScene.js`
 
-O bloco **"Ao extrair:"** mostra o `rende` do item: é a resposta direta à
-pergunta "o que isso vira quando eu cavar".
+- Mapa expandido de **34x26** para **60x44** tiles (2640x1936 vs 1088x832).
+  Mais espaco para explorar, bases maiores, mais recursos e monstros.
+- Portal Arcanos com **efeitos visuais aprimorados**: aro runico rotativo,
+  brilho pulsante, particulas de essencia arcana subindo, runas orbitando,
+  placa com dica de tecla.
+- **Posicao do portal escolha do jogador**: Shift+P alterna entre 4 posicoes
+  (direita, esquerda, cima, baixo). A preferencia e salva em
+  `estado.portalOffsetIdx` e persiste entre sessoes.
 
-#### Termos de uso e política de privacidade — `src/dados/legal.js`, `src/scenes/TermosScene.js`
+#### Itens empilhaveis ate 1k + pereciveis — `src/core/personagem.js`, `src/core/regras.js`, `src/dados/schemaAdmin.js`
 
-12 seções de termos + 6 de privacidade, com `VERSAO_TERMOS = '1.0.0'` e
-`DATA_TERMOS = '2026-10-01'`.
+- Novo padrao `stackMax = 1000` (era 999).
+- Campo `perecivel` (boolean) + `tempoEstragarSegundos` no cadastro de itens.
+- Alimentos pereciveis **nao empilham se tiverem validade diferente** —
+  `dataValidade = Date.now() + tempoEstragarSegundos * 1000` ao criar.
+  Evita misturar comida fresca com velha e perder tudo de uma vez.
 
-A versão mora **no documento**, não no servidor. Mudar `VERSAO_TERMOS` força o
-aceite de novo sem deploy de backend, e o aceite gravado é imutável — não dá
-para "aceitar por baixo dos panos".
+#### Admin: foco persistente, imagem com preview, busca ao vivo — `src/ui/formularios.js`, `src/ui/comuns.js`, `src/scenes/AdminScene.js`, `src/scenes/AjudaScene.js`
 
-Scroll com máscara de geometria real de `Graphics` + scrollbar; `setMask` não
-aceita `Rectangle`.
+- Inputs DOM reais com **foco e cursor que sobrevivem a redesenhos**.
+  Redesenhar a tela (filtrar lista, trocar aba) nao mais derruba o que o
+  admin esta digitando.
+- Campo imagem: preview instantaneo (data URL) antes do upload, upload para
+  Storage com redimensionamento client-side 256px, fallback para colar URL.
+- Busca ao vivo com debounce 160ms na lista do admin e na wiki (H).
 
-> **Os textos são rascunho de trabalho, não aconselhamento jurídico.** O topo do
-> arquivo lista o que ainda precisa de profissional habilitado: identificação do
-> controlador, base legal por categoria de dado, canal do CDC com prazo de
-> resposta, política de reembolso e os requisitos do ECA Digital.
+#### Validação estática de chamadas inexistentes — `testes/logica.mjs`
+
+Novo teste que varre `src/scenes`, `src/ui`, `src/core`, `src/dados` e
+acusa **qualquer funcao chamada que nao exista** (nem declarada, nem importada,
+nem global). Ja pegou dois bugs reais:
+- `AjudaScene.create()` chamava `this.montar()` (metodo era `redimensionar()`).
+- `TalentosScene.corDoRamo()` chamava `corDeNome()` (nao existia).
 
 #### Eliminação de dados — `src/core/apagamento.js`
 

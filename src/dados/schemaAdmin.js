@@ -172,6 +172,16 @@ export const CAMPOS_ITEM = [
   { chave: 'rendimentoMax', rotulo: 'Rendimento máximo', tipo: 'numero' },
   { chave: 'dureza', rotulo: 'Dureza (golpes para extrair)', tipo: 'numero' },
   { chave: 'vidaBloco', rotulo: 'Vida do bloco', tipo: 'numero' },
+
+  // Perecíveis: alimentos que estragam. Se TRUE, itens com esta flag NAO se
+  // empilham com outros da mesma ID se tiverem tempo de validade diferente.
+  // O admin cadastra `tempoEstragarSegundos` (ex.: 3600 = 1h) e o jogo
+  // atribui `dataValidade = Date.now() + tempoEstragarSegundos * 1000` ao criar.
+  { chave: 'perecivel', rotulo: 'Perecível (estraga)', tipo: 'select',
+    opcoes: [{ valor: false, rotulo: 'Não' }, { valor: true, rotulo: 'Sim' }],
+    dica: 'Alimentos que estragam. Pilhas com validade diferente nao se unem.' },
+  { chave: 'tempoEstragarSegundos', rotulo: 'Tempo até estragar (segundos)', tipo: 'numero',
+    dica: 'Ex.: 3600 = 1 hora, 86400 = 1 dia. So vale se Perecível = Sim.' },
 ];
 
 // =====================================================================
