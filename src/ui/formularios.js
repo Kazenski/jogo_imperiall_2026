@@ -245,8 +245,8 @@ function campoDigitacao(scene, container, cfg) {
 
   const caixa = caixaArredondada(scene, x, y, largura, altura, {
     raio: 7,
-    preenchimento: 0x1a1410,
-    borda: 0x4a3a28,
+    preenchimento: 0x191307,
+    borda: 0x6b5636,
     larguraBorda: 1,
     origem: [0, 0],
   });
@@ -275,16 +275,16 @@ function campoDigitacao(scene, container, cfg) {
   // "qual campo eu to digitando", porque o texto do DOM e o unico sinal.
   const piscar = () => {
     caixa.caixa.clear();
-    caixa.caixa.fillStyle(0x241c14, 1);
+    caixa.caixa.fillStyle(0x2a2013, 1);
     caixa.caixa.fillRoundedRect(0, 0, largura, altura, 7);
     caixa.caixa.lineStyle(2, OURO, 1);
     caixa.caixa.strokeRoundedRect(0, 0, largura, altura, 7);
   };
   const apagar = () => {
     caixa.caixa.clear();
-    caixa.caixa.fillStyle(0x1a1410, 1);
+    caixa.caixa.fillStyle(0x191307, 1);
     caixa.caixa.fillRoundedRect(0, 0, largura, altura, 7);
-    caixa.caixa.lineStyle(1, 0x4a3a28, 1);
+    caixa.caixa.lineStyle(1, 0x6b5636, 1);
     caixa.caixa.strokeRoundedRect(0, 0, largura, altura, 7);
   };
   apagar();
@@ -350,8 +350,8 @@ function campoSelect(scene, container, cfg) {
 
   const caixa = caixaArredondada(scene, x, y, largura, altura, {
     raio: 7,
-    preenchimento: 0x1a1410,
-    borda: 0x4a3a28,
+    preenchimento: 0x191307,
+    borda: 0x6b5636,
     larguraBorda: 1,
     origem: [0, 0],
   });
@@ -523,8 +523,8 @@ function campoMultiselec(scene, container, cfg) {
       const ativo = selecionados.has(op.valor);
       const chipFundo = caixaArredondada(scene, cx, cy, w, ALTO_CHIP, {
         raio: 11,
-        preenchimento: ativo ? 0xd4af6a : 0x241c14,
-        borda: ativo ? 0xd4af6a : 0x4a3a28,
+        preenchimento: ativo ? 0xd4af6a : 0x2a2013,
+        borda: ativo ? 0xd4af6a : 0x6b5636,
         larguraBorda: 1,
         origem: [0, 0],
       });
@@ -604,8 +604,8 @@ function campoImagem(scene, container, cfg) {
   container.add(
     caixaArredondada(scene, x, y, largura, alturaTotal, {
       raio: 8,
-      preenchimento: 0x1a1410,
-      borda: 0x4a3a28,
+      preenchimento: 0x191307,
+      borda: 0x6b5636,
       larguraBorda: 1,
       origem: [0, 0],
     }),

@@ -121,7 +121,7 @@ const ABAS = [
 ];
 
 const LARGURA_LISTA = 320;
-const TOPO = 116;
+const TOPO = 132;
 const GAP = 6;
 
 // Layout do formulário: três colunas (lista | campos | preview)
@@ -201,12 +201,16 @@ export class AdminScene extends Phaser.Scene {
     this.abasContainer.removeAll(true);
 
     // Fundo e moldura.
-    this.cabecalho.add(this.add.rectangle(width / 2, height / 2, width, height, 0x0d0a07, 0.99));
+    this.cabecalho.add(this.add.rectangle(width / 2, height / 2, width, height, 0x0a0705, 1));
     this.cabecalho.add(
-      uiPainel(this, 12, 12, Math.max(320, width - 24), Math.max(200, height - 24), 0x14100c, 0.99),
+      uiPainel(this, 12, 12, Math.max(320, width - 24), Math.max(200, height - 24), 0x120d08, 0.99),
     );
 
-    this.cabecalho.add(uiTitulo(this, 32, 28, 'ADMINISTRAÇÃO DO IMPÉRIUM', '20px').setOrigin(0, 0));
+    this.cabecalho.add(uiTitulo(this, 32, 28, 'ADMINISTRAÇÃO DO IMPÉRIUM', '22px').setOrigin(0, 0).setColor('#e8c88a'));
+    this.cabecalho.add(
+      uiTexto(this, 32, 56, 'Gestão de catálogos, reinos, portais e jogadores', { fontSize: '10px', color: '#8a7a63' })
+        .setOrigin(0, 0),
+    );
 
     const fechar = this.add
       .text(width - 32, 30, 'Fechar  [F2]', { ...FONTE_UI, fontSize: '12px', color: OURO })
@@ -230,12 +234,12 @@ export class AdminScene extends Phaser.Scene {
     const alturaFaixa = 4 + linhas * 34;
 
     let cx = 32;
-    let cy = 62;
+    let cy = 72;
     ABAS.forEach((aba, i) => {
       const w = larguras[i];
       if (i > 0 && cx + w > 32 + util) {
         cx = 32;
-        cy += 34;
+        cy += 36;
       }
       this.abasContainer.add(this.desenharAba(aba, cx, cy, w));
       cx += w + GAP;
@@ -255,10 +259,10 @@ export class AdminScene extends Phaser.Scene {
     const cx = largura / 2;
 
     const fundo = caixaArredondada(this, cx, h / 2, largura, h, {
-      raio: 8,
-      preenchimento: ativo ? 0xd4af6a : 0x241c14,
-      borda: ativo ? 0x8a6a2f : 0x3a2c20,
-      larguraBorda: 1,
+      raio: 9,
+      preenchimento: ativo ? 0xd4af6a : 0x1c1510,
+      borda: ativo ? 0xf0d9a0 : 0x4a3a26,
+      larguraBorda: ativo ? 2 : 1,
       origem: [0.5, 0.5],
     });
 
@@ -280,11 +284,11 @@ export class AdminScene extends Phaser.Scene {
 
     zone.on('pointerover', () => {
       if (ativo) return;
-      this.repintar(c, cx, h, largura, 0x3a2c20, 0x8a6a2f);
+      this.repintar(c, cx, h, largura, 0x2e2318, 0xd4af6a);
     });
     zone.on('pointerout', () => {
       if (ativo) return;
-      this.repintar(c, cx, h, largura, 0x241c14, 0x3a2c20);
+      this.repintar(c, cx, h, largura, 0x1c1510, 0x4a3a26);
     });
     zone.on('pointerdown', () => {
       this.abaAtual = aba.id;
@@ -593,16 +597,18 @@ export class AdminScene extends Phaser.Scene {
     const sel = this.selecionado?.item?.id === item.id && this.selecionado?.aba?.id === aba.id;
 
     const caixa = caixaArredondada(this, x, y, largura, altura, {
-      raio: 8,
-      preenchimento: sel ? 0x2f2418 : 0x1d1710,
-      borda: sel ? OURO : 0x2e241a,
+      raio: 9,
+      preenchimento: sel ? 0x332614 : 0x17110b,
+      borda: sel ? 0xe8c88a : 0x3a2e1e,
       larguraBorda: sel ? 2 : 1,
       origem: [0, 0],
     });
 
     // thumbnail
     const img = this.add.image(x + 22, y + altura / 2, 'painel').setDisplaySize(28, 28);
+    img.setTint(0x8a7a63);
     if (item.imagem) {
+      img.clearTint();
       this.load.image(`thumb_${item.id}`, item.imagem);
       this.load.once(`filecomplete-thumb_${item.id}`, () => {
         if (img.scene) img.setTexture(`thumb_${item.id}`);
@@ -633,17 +639,17 @@ export class AdminScene extends Phaser.Scene {
 
     zone.on('pointerover', () => {
       caixa.caixa.clear();
-      caixa.caixa.fillStyle(0x2a2018, 1);
-      caixa.caixa.fillRoundedRect(0, 0, largura, altura, 8);
-      caixa.caixa.lineStyle(1, OURO, 1);
-      caixa.caixa.strokeRoundedRect(0, 0, largura, altura, 8);
+      caixa.caixa.fillStyle(0x2e2317, 1);
+      caixa.caixa.fillRoundedRect(0, 0, largura, altura, 9);
+      caixa.caixa.lineStyle(1, 0xd4af6a, 1);
+      caixa.caixa.strokeRoundedRect(0, 0, largura, altura, 9);
     });
     zone.on('pointerout', () => {
       caixa.caixa.clear();
-      caixa.caixa.fillStyle(sel ? 0x2f2418 : 0x1d1710, 1);
-      caixa.caixa.fillRoundedRect(0, 0, largura, altura, 8);
-      caixa.caixa.lineStyle(sel ? 2 : 1, sel ? OURO : 0x2e241a, 1);
-      caixa.caixa.strokeRoundedRect(0, 0, largura, altura, 8);
+      caixa.caixa.fillStyle(sel ? 0x332614 : 0x17110b, 1);
+      caixa.caixa.fillRoundedRect(0, 0, largura, altura, 9);
+      caixa.caixa.lineStyle(sel ? 2 : 1, sel ? 0xe8c88a : 0x3a2e1e, 1);
+      caixa.caixa.strokeRoundedRect(0, 0, largura, altura, 9);
     });
     zone.on('pointerdown', () => {
       this.selecionado = { aba, item };
