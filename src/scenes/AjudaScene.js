@@ -70,6 +70,13 @@ const COR_RARIDADE = {
 const LARGURA_LISTA = 268;
 const PREVIEW = 96;
 
+// Largura do botão de fechar, em constante nomeada.
+//
+// Sem ela, "canto superior direito do painel" vira aritmética escrevendo
+// `x0 + w - 24 - 150` no meio da chamada, e o número some. Com o nome, o
+// intenção se lê: a borda direita do botão fica a 24px da borda do painel.
+const LARGURA_FECHAR = 150;
+
 export class AjudaScene extends Phaser.Scene {
   constructor() {
     super('Ajuda');
@@ -92,6 +99,8 @@ export class AjudaScene extends Phaser.Scene {
     // porque a ficha (cartão) e a página completa são dois estados: o jogador
     // escolhe um item, vê a ficha, e aí clica para o cruzamento completo.
     this.detalheAberto = null;
+    this.desloc = 0; // rolagem da lista de registros
+    this.deslocNav = 0; // rolagem da coluna de seções
 
     this.raiz = this.add.container(0, 0);
     this.campos = [];
@@ -154,11 +163,18 @@ export class AjudaScene extends Phaser.Scene {
         .setOrigin(0, 0),
     );
 
-    // Botão fechar
+    // Botão fechar.
+    //
+    // `botao()` tem `origem: [0.5, 0.5]` por padrão: x/y é o CENTRO. Passando
+    // `x0 + w - 24` sem declarar a origem, o botão fica centrado 75px antes
+    // daquela posição e transborda 51px para fora do painel — cortado na
+    // borda da tela. Todas as chamadas desta tela posicionam pelo canto
+    // superior esquerdo, então todas declaram `origem: [0, 0]`.
     this.raiz.add(
-      botao(this, x0 + w - 24, y0 + 30, 'Fechar  [H / ESC]', () => this.fechar(), {
-        largura: 150,
+      botao(this, x0 + w - 24 - LARGURA_FECHAR, y0 + 30, 'Fechar  [H / ESC]', () => this.fechar(), {
+        largura: LARGURA_FECHAR,
         altura: 28,
+        origem: [0, 0],
         tamanho: '12px',
         cor: 0x2a2018,
         corHover: 0x3a2c20,
@@ -225,8 +241,42 @@ export class AjudaScene extends Phaser.Scene {
     );
 
     const lista = this.navegacaoVisivel();
-    let ly = y + 8;
-    for (const s of lista) {
+    const n = lista.length;
+
+    // Medidas da coluna.
+    const TOPO = 8;
+    const ALTURA_ITEM = 26;
+    // O rodapé tem prioridade sobre a lista. Se a coluna é baixa demais para as
+    // duas coisas, quem sai é a lista (rolando) — nunca o rodapé, que é a única
+    // dica de que a busca está filtrando o índice.
+    const ALTURA_RODAPE = 34;
+    const areaLista = Math.max(ALTURA_ITEM, altura - TOPO - ALTURA_RODAPE);
+
+    // Passo adaptativo.
+    //
+    // Com passo fixo de 30 e 8 seções, uma janela baixa cortava a última
+    // ("Conquistas") ao meio: o botão saía do painel e ficava por cima do
+    // conteúdo. Aqui o passo encolhe até 20px, que é o mínimo legível; abaixo
+    // disso a lista rola.
+    const passo =
+      n <= 1 ? 30 : Math.max(20, Math.min(30, Math.floor((areaLista - ALTURA_ITEM) / (n - 1))));
+
+    const cabem = n ? Math.floor((areaLista - ALTURA_ITEM) / passo) + 1 : 0;
+    const maxDesloc = Math.max(0, n - cabem);
+
+    // Mantém a seção atual visível, venha a rolagem de onde vier.
+    let inicio = Math.max(0, Math.min(maxDesloc, this.deslocNav ?? 0));
+    const atual = lista.findIndex((s) => s.id === this.secao);
+    if (atual >= 0) {
+      if (atual < inicio) inicio = atual;
+      else if (atual > inicio + cabem - 1) inicio = atual - cabem + 1;
+    }
+    inicio = Math.max(0, Math.min(maxDesloc, inicio));
+    this.deslocNav = inicio;
+
+    let ly = y + TOPO;
+    for (let i = inicio; i < Math.min(n, inicio + cabem); i += 1) {
+      const s = lista[i];
       const ativo = s.id === this.secao;
       const b = botao(this, x + 10, ly, s.rotulo, () => {
         this.secao = s.id;
@@ -236,7 +286,9 @@ export class AjudaScene extends Phaser.Scene {
         this.redimensionar();
       }, {
         largura: LARGURA_LISTA - 20,
-        altura: 26,
+        altura: ALTURA_ITEM,
+        // Canto superior esquerdo: ver a nota em `botao()`.
+        origem: [0, 0],
         tamanho: '12px',
         cor: ativo ? 0xd4af6a : 0x1a140e,
         corHover: ativo ? 0xd4af6a : 0x2a2018,
@@ -245,7 +297,7 @@ export class AjudaScene extends Phaser.Scene {
         alinhamento: 'left',
       });
       this.raiz.add(b.container);
-      ly += 30;
+      ly += passo;
     }
 
     if (!lista.length) {
@@ -256,8 +308,41 @@ export class AjudaScene extends Phaser.Scene {
       );
     }
 
+    // Rolagem da coluna de seções, no mesmo padrão da lista de registros.
+    if (maxDesloc > 0) {
+      const bx = x + LARGURA_LISTA - 16;
+      const topo = y + TOPO + 2;
+      const baixo = y + TOPO + areaLista - ALTURA_ITEM;
+
+      const setaCima = this.add
+        .text(bx, topo, '▲', { ...FONTE_UI, fontSize: '10px', color: PERGAMINHO })
+        .setOrigin(0.5)
+        .setAlpha(inicio > 0 ? 1 : 0.25)
+        .setInteractive({ useHandCursor: true });
+      if (inicio > 0) {
+        setaCima.on('pointerdown', () => {
+          this.deslocNav = Math.max(0, this.deslocNav - 1);
+          this.redimensionar();
+        });
+      }
+
+      const setaBaixo = this.add
+        .text(bx, baixo, '▼', { ...FONTE_UI, fontSize: '10px', color: PERGAMINHO })
+        .setOrigin(0.5)
+        .setAlpha(inicio < maxDesloc ? 1 : 0.25)
+        .setInteractive({ useHandCursor: true });
+      if (inicio < maxDesloc) {
+        setaBaixo.on('pointerdown', () => {
+          this.deslocNav = Math.min(maxDesloc, this.deslocNav + 1);
+          this.redimensionar();
+        });
+      }
+
+      this.raiz.add([setaCima, setaBaixo]);
+    }
+
     // Atalhos no rodapé da coluna
-    const rodape = y + altura - 30;
+    const rodape = y + altura - ALTURA_RODAPE + 4;
     this.raiz.add(
       uiTexto(
         this,
@@ -353,6 +438,9 @@ export class AjudaScene extends Phaser.Scene {
       }, {
         largura: largura - 6,
         altura: 24,
+        // Canto superior esquerdo: sem isto o botão sai meia largura para fora
+        // da coluna e cobre a navegação lateral.
+        origem: [0, 0],
         tamanho: '11px',
         cor: ativo ? 0x2f2418 : 0x120e0a,
         corHover: 0x2a2018,
@@ -720,10 +808,10 @@ export class AjudaScene extends Phaser.Scene {
     // Passar o objeto inteiro para `Container.add` estoura com
     // "gameObject.once is not a function", que não aponta para a causa.
     this.raiz.add(
-      botao(this, x + largura - 116, y, '← Voltar à lista', () => {
+      botao(this, x + largura - 120, y, '← Voltar à lista', () => {
         this.detalheAberto = null;
         this.redimensionar();
-      }, { largura: 112, altura: 24, tamanho: '11px' }).container,
+      }, { largura: 112, altura: 24, origem: [0, 0], tamanho: '11px' }).container,
     );
 
     this.raiz.add(
@@ -802,6 +890,24 @@ export class AjudaScene extends Phaser.Scene {
       });
     }
 
+    // Item sem NENHUMA referência cadastrada.
+    //
+    // Isto entra ANTES da medição e da distribuição em colunas. Estava depois:
+    // o grupo "Sem informação" era empurrado para uma lista que já tinha sido
+    // medida e balanceada, então um item sem receita, sem monstro, sem chunk e
+    // sem loja aparecia com a página inteira em branco. Ausência de dado é
+    // informação — o jogador precisa ver que o admin é que não cadastrou.
+    if (!grupos.length) {
+      grupos.push({
+        titulo: 'Sem informação',
+        cor: PERGAMINHO,
+        linhas: [
+          'Nenhuma receita, monstro, chunk, bioma ou loja menciona este item.',
+          'O administrador ainda pode cadastrar isso no painel (F2).',
+        ],
+      });
+    }
+
     // Ordena por assunto: o que é, como se faz, onde se acha.
     const ordem = ['O que é', 'Usado para fazer', 'Produzido por', 'Onde achar'];
     grupos.sort((a, b) => ordem.indexOf(a.titulo) - ordem.indexOf(b.titulo));
@@ -812,6 +918,11 @@ export class AjudaScene extends Phaser.Scene {
     // ocupa duas, e a seguinte era desenhada por cima. Medir com o próprio
     // Phaser é o que resolve — inclusive quando o admin escreve uma descrição
     // de três linhas e o nome do item é enorme.
+    //
+    // `this.add.text()` JÁ ADICIONA o objeto à display list da cena. Por isso os
+    // textos medidos que acabam não cabendo em nenhuma coluna precisam ser
+    // destruídos no fim — senão ficam órfãos em (0,0), empilhados no canto
+    // superior esquerdo do canvas, por cima do menu.
     const larguraTexto = larguraCol - 16;
     const ALTURA_TITULO = 24;
     const ESPACO_LINHA = 4;
@@ -835,17 +946,6 @@ export class AjudaScene extends Phaser.Scene {
       return { grupo: g, textos, altura: ALTURA_TITULO + conteudo + espaco + RODAPE };
     });
 
-    if (!grupos.length) {
-      grupos.push({
-        titulo: 'Sem informação',
-        cor: PERGAMINHO,
-        linhas: [
-          'Nenhuma receita, monstro, chunk, bioma ou loja menciona este item.',
-          'O administrador ainda pode cadastrar isso no painel (F2).',
-        ],
-      });
-    }
-
     // Distribui os grupos pelas colunas, equilibrando a altura MEDIDA.
     const alturas = medidos.map((m) => m.altura);
     const alturasPorCol = new Array(colunas).fill(0);
@@ -857,6 +957,9 @@ export class AjudaScene extends Phaser.Scene {
     }
 
     const disponivel = altura - (topo - y) - 8;
+
+    // Textos que entraram em `raiz`. O que sobrar fora daqui é destruído no fim.
+    const desenhados = new Set();
 
     for (let c = 0; c < colunas; c += 1) {
       const cx = x + c * (larguraCol + vao);
@@ -896,9 +999,23 @@ export class AjudaScene extends Phaser.Scene {
         for (const t of m.textos) {
           t.setPosition(cx + 8, ly);
           this.raiz.add(t);
+          desenhados.add(t);
           ly += t.height + ESPACO_LINHA;
         }
         cy += m.altura + vao;
+      }
+    }
+
+    // Destrói os textos medidos que não couberam em nenhuma coluna.
+    //
+    // Eles foram criados com `this.add.text()`, que já os coloca na display
+    // list da cena. Sem este passo, um item com muitas origens deixava os
+    // grupos que não couberam empilhados em (0, 0) — no canto superior
+    // esquerdo do canvas, por cima do menu, e fora do painel. Como estavam na
+    // cena e não em `this.raiz`, nenhuma verificação de limites os via.
+    for (const m of medidos) {
+      for (const t of m.textos) {
+        if (!desenhados.has(t)) t.destroy();
       }
     }
 

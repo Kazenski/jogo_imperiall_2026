@@ -152,7 +152,21 @@ export function botao(scene, x, y, rotulo, onClick, opcoes = {}) {
     alfa = 1,
     icone = null,
     corBorda = 0x8a6a2f,
-    alinhamento = 'left',
+    // Alinhamento do TEXTO dentro da caixa.
+    //
+    // O default e 'center' de proposito. `alinhamento: 'left'` antes era lido
+    // como "texto encostado a esquerda", mas a formula usada era
+    //
+    //   textoX = padding + (largura - padding * 2) / 2
+    //
+    // que e exatamente `largura / 2` — o centro. Entao 'left' nao fazia nada:
+    // nenhum botao do jogo estava alinhado a esquerda, todos estavam
+    // centralizados por acidente, e foi assim que ficaram na tela.
+    //
+    // Mudar o default para 'center' e fazer 'left' funcionar de verdade afeta
+    // SO os botao que pedem 'left' explicitamente. Os outros 45 continuam
+    // centrais, exatamente como estavam.
+    alinhamento = 'center',
     padding = 10,
   } = opcoes;
 
@@ -223,18 +237,31 @@ export function botao(scene, x, y, rotulo, onClick, opcoes = {}) {
       const inicio = padding + tamanhoIcone + 8;
       textoX = inicio + (largura - inicio - padding) / 2;
     }
-  } else if (alinhamento === 'left') {
-    textoX = padding + (largura - padding * 2) / 2;
   }
 
+  // Com 'left' o texto encosta no padding da esquerda, e nao no centro.
+  //
+  // A origem precisa acompanhar: com `setOrigin(0.5)` o texto continuaria
+  // centralizado em `textoX` por mais que se mude o x. E o `wordWrapWidth`
+  // evita que um rotulo longo transborde a caixa — o texto quebra em vez de
+  // vazar por cima da borda.
+  const alinhadoEsquerda = !icone && alinhamento === 'left';
+
   const label = scene.add
-    .text(dx + textoX, dy + altura / 2, rotulo, {
-      ...FONTE_UI,
-      fontSize: tamanho,
-      color: corTexto,
-      align: 'center',
-    })
-    .setOrigin(0.5);
+    .text(
+      alinhadoEsquerda ? dx + padding : dx + textoX,
+      dy + altura / 2,
+      rotulo,
+      {
+        ...FONTE_UI,
+        fontSize: tamanho,
+        color: corTexto,
+        align: alinhadoEsquerda ? 'left' : 'center',
+      },
+    )
+    .setOrigin(alinhadoEsquerda ? 0 : 0.5, 0.5);
+
+  if (alinhadoEsquerda) label.setWordWrapWidth(largura - padding * 2);
   label.setVisible(Boolean(rotulo));
   box.add(label);
 

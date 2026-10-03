@@ -16,10 +16,14 @@
     <div id="hud">carregando…</div>
     <div id="painel">
       <button data-acao="abrir">abrir detalhe do ferro</button>
+      <button data-acao="voltar">voltar</button>
       <button data-acao="busca-ferro">buscar "ferro"</button>
       <button data-acao="busca-golem">buscar "golem"</button>
       <button data-acao="busca-forgajava">buscar "forja"</button>
-      <button data-acao="voltar">voltar</button>
+      <button data-acao="janela-alta">janela alta 1180x820</button>
+      <button data-acao="janela-baixa">janela baixa 1180x520</button>
+      <button data-acao="janela-min">janela mínima 700x420</button>
+      <button data-acao="procurar">medir transbordos</button>
     </div>
     <div id="jogo"></div>
 
@@ -102,6 +106,48 @@
           }, 60);
         });
 
+      // Exposto para o probe de layout: sem acesso ao `jogo`, não dá para
+      // redimensionar a janela e reproduzir coluna baixa.
+      window.__jogo = jogo;
+
+      // Mede o que saiu para fora do painel.
+      //
+      // A causa dos menus escapando é `botao()` centralizar em x/y por padrão
+      // enquanto o chamador escreve como se fosse canto superior esquerdo. Isso
+      // não aparece no código — só comparando as caixas de borda na tela.
+      //
+      // Varre `scene.children`, NÃO só `c.raiz.list`. `this.add.text()` entra
+      // direto na cena, e um texto criado e não adicionado a `raiz` ficava
+      // invisível para a verificação de `raiz` enquanto continuava desenhado
+      // na tela.
+      window.__transbordos = () => {
+        const c = window.__cena && window.__cena();
+        if (!c || !c.geometria) return 'cena nao pronta';
+        const g = c.geometria;
+        const fora = [];
+        const vistos = new Set();
+        const todos = [...c.raiz.list];
+        // Objetos soltos na cena (fora de `raiz`).
+        for (const ch of c.children.list) if (!vistos.has(ch)) todos.push(ch);
+
+        for (const o of todos) {
+          if (!o.getBounds || !o.visible) continue;
+          const b = o.getBounds();
+          if (b.width === 0 && b.height === 0) continue;
+          const lados = [];
+          if (b.left < g.x0) lados.push('esq');
+          if (b.right > g.x0 + g.w) lados.push('dir');
+          if (b.top < g.y0) lados.push('cim');
+          if (b.bottom > g.y0 + g.h) lados.push('bai');
+          if (!lados.length) continue;
+          const nomes = [];
+          if (o.text) nomes.push(o.text);
+          if (o.list) for (const f of o.list) if (f.text) nomes.push(f.text);
+          fora.push({ rot: nomes.join(' / ').slice(0, 30), lados: lados.join(','), l: Math.round(b.left), r: Math.round(b.right), t: Math.round(b.top), b: Math.round(b.bottom) });
+        }
+        return { canvas: { w: c.scale.width, h: c.scale.height }, painel: g, fora };
+      };
+
       (async () => {
         await esperar(() => jogo.isRunning && jogo.scene.getScene('Ajuda'));
 
@@ -146,6 +192,18 @@
           if (a === 'busca-ferro') { c.busca = 'ferro'; c.redimensionar(); }
           if (a === 'busca-golem') { c.busca = 'golem'; c.redimensionar(); }
           if (a === 'busca-forgajava') { c.busca = 'forja'; c.redimensionar(); }
+          if (a === 'janela-alta') { window.__jogo.scale.resize(1180, 820); }
+          if (a === 'janela-baixa') { window.__jogo.scale.resize(1180, 520); }
+          if (a === 'janela-min') { window.__jogo.scale.resize(700, 420); }
+          if (a === 'procurar') {
+            const t = window.__transbordos();
+            hud.innerHTML = t === 'cena nao pronta'
+              ? t
+              : `canvas <b>${t.canvas.w}x${t.canvas.h}</b> · transbordos: <b>${t.fora.length}</b><br>` +
+                (t.fora.length
+                  ? t.fora.map((f) => `${f.rot} [${f.lados}] ${f.l}..${f.r}`).join('<br>')
+                  : 'nenhum elemento fora do painel');
+          }
         });
       });
     </script>
