@@ -8,6 +8,49 @@ caminho mais rápido é relatar com o que você estava fazendo na tela.
 
 ---
 
+## A wiki agora responde "o que eu faço com isto?"
+
+*v0.1.3 · Outubro de 2026*
+
+### Antes
+
+A wiki listava os itens e abria um cartão com nome, descrição e alguns
+atributos. Parava aí. A pergunta que o jogador faz ao clicar num item — "o que
+eu faço **com** ele?" — não tinha resposta em lugar nenhum do jogo.
+
+### Agora
+
+Clicar num item abre a **ficha completa**, em três blocos:
+
+**O que é** — tipo, usos, dano, defesa, slots de orbe, efeitos, pré-requisitos.
+
+**Usado para fazer** — cada receita que consome o item, com a quantidade, a
+estação, o nível mínimo, e **os outros ingredientes** (com os nomes, não os ids
+internos).
+
+**Produzido por** — as receitas que criam o item, com tempo e custo de poder.
+
+**Onde achar** — de onde ele vem, de tudo que existe no jogo: recurso do mundo,
+bloco nativo de bioma, superfície, subsolo, nó de recurso de chunk, dentro de
+baú (com a chance), largado no chão, drop de monstro (com a chance e o nível),
+e à venda em NPC (com o preço).
+
+### A busca ficou mais esperta
+
+Buscar **"ferro"** agora acha não só o Ferro: acha também a Espada de Ferro e a
+Poção de Vida, porque elas são feitas com ele. E buscar **"golem"** acha o ferro
+e a espada, porque o Golem dropa os dois. O cruzamento entrou na busca.
+
+### Detalhe honesto
+
+Quando uma receita aponta para um item que **não está cadastrado**, a wiki
+mostra o nome do item assim mesmo e marca com ⚠ "ingrediente não cadastrado".
+Isso é um dado quebrado que o painel não avisa — e a wiki passou a avisar.
+
+Para olhar isso sem entrar no jogo, com o dev server no ar: **`/teste-wiki.html`**.
+
+---
+
 ## Correção — os chunks cadastrados não contavam
 
 *v0.1.3 · Outubro de 2026*

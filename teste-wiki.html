@@ -1,0 +1,153 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8" />
+    <title>Teste — wiki do item</title>
+    <style>
+      body { margin: 0; background: #0a0805; color: #d9dee3; font-family: system-ui, sans-serif; }
+      #hud { padding: 10px 14px; font-size: 12px; line-height: 1.6; }
+      #hud b { color: #d4af6a; }
+      #painel { padding: 0 14px 14px; }
+      button { font: inherit; padding: 5px 10px; margin: 0 4px 4px 0; cursor: pointer; }
+      canvas { display: block; margin: 0 auto; }
+    </style>
+  </head>
+  <body>
+    <div id="hud">carregando…</div>
+    <div id="painel">
+      <button data-acao="abrir">abrir detalhe do ferro</button>
+      <button data-acao="busca-ferro">buscar "ferro"</button>
+      <button data-acao="busca-golem">buscar "golem"</button>
+      <button data-acao="busca-forgajava">buscar "forja"</button>
+      <button data-acao="voltar">voltar</button>
+    </div>
+    <div id="jogo"></div>
+
+    <script type="module">
+      import Phaser from 'phaser';
+      import { BootScene } from '/jogo_imperiall_2026/src/scenes/BootScene.js';
+      import { AjudaScene } from '/jogo_imperiall_2026/src/scenes/AjudaScene.js';
+      import { referenciasDoItem } from '/jogo_imperiall_2026/src/core/wiki.js';
+
+      const hud = document.getElementById('hud');
+
+      const ITENS = [
+        { id: 'ferro', nome: 'Ferro', tipo: 'bloco', descricao: 'Metal endurecido, base de toda ferramenta boa. Extraído em veios profundos.', uso: ['estrutura', 'extracao'], slotsUpgrade: 1, cor: '#6b7680' },
+        { id: 'pedra', nome: 'Pedra', tipo: 'bloco', descricao: 'A rocha comum. Serve para tudo e não serve para nada bem.', uso: ['estrutura'], cor: '#a8b2bc' },
+        { id: 'terra', nome: 'Terra', tipo: 'bloco', descricao: 'Solo mole. Só serve para cobrir e para nada mais.', uso: ['estrutura'], cor: '#8a6a2f' },
+        { id: 'grama', nome: 'Grama', tipo: 'bloco', descricao: 'A casca verde da superfície.', uso: ['estrutura'], cor: '#7ba23f' },
+        { id: 'espada_ferro', nome: 'Espada de Ferro', tipo: 'equipavel', descricao: 'Lâmina simples, confiável.', dano: 12, uso: ['equipavel'], cor: '#c394d0' },
+        { id: 'pocao_vida', nome: 'Poção de Vida', tipo: 'consumivel', descricao: 'Restaura 50 de vida ao beber.', uso: ['utilizacao'], cor: '#e08a8a' },
+        { id: 'bau_comum', nome: 'Baú Comum', tipo: 'bloco', uso: ['estrutura'], cor: '#d4af6a' },
+      ];
+
+      const CATALOGO = {
+        itens: ITENS,
+        skills: [],
+        classes: [],
+        recipes: [
+          { id: 'r1', nome: 'Espada de Ferro', descricao: 'A primeira arma de verdade.', estacao: 'forja', nivelMin: 2, tempoMs: 2400, custoPoder: 8,
+            insumos: [{ itemId: 'ferro', qtd: 3 }, { itemId: 'pedra', qtd: 1 }], saida: [{ itemId: 'espada_ferro', qtd: 1 }] },
+          { id: 'r2', nome: 'Poção de Vida', descricao: 'Cura na hora.', estacao: 'alambique', nivelMin: 1, tempoMs: 1500,
+            insumos: 'ferro:1, agua:2', saida: 'pocao_vida:2' },
+          { id: 'r3', nome: 'Bloco de Pedra', estacao: 'forja', nivelMin: 1, tempoMs: 800, saida: 'pedra:4' },
+        ],
+        monsters: [
+          { id: 'm1', nome: 'Slime', faixaMin: 1, descricao: 'Gelatina hostil.', loot: 'ferro:20:2, pedra:80:5' },
+          { id: 'm2', nome: 'Golem de Ferro', faixaMin: 8, descricao: 'Pesado e lento.', loot: [{ itemId: 'ferro', chance: 90, qtdMax: 4 }, { itemId: 'espada_ferro', chance: 4, qtdMax: 1 }] },
+        ],
+        worldTemplates: [
+          { id: 'r9', nome: 'Campo Aberto', bioma: 'campo', descricao: 'Terreno plano e seguro.', recursosAbundantes: ['pedra', 'grama'] },
+        ],
+        biomas: [
+          { id: 'b1', nome: 'Serra de Ferro', tipo: 'montanha', blocosNativos: ['pedra'], blocosSuperficie: ['grama'], blocosSubSolo: ['ferro'] },
+        ],
+        chunks: [
+          { id: 'c1', nome: 'Mina Profunda', mundoId: 'r9', recursos: ['ferro'], blocosSuperficie: ['grama'], blocosSubSolo: ['pedra'],
+            baus: ['bau_comum'], chanceBaus: 0.02, quantidadeBaus: 3,
+            conteudoBaus: [{ bauId: 'bau_comum', itens: [{ itemId: 'ferro', chance: 40, qtdMax: 2 }, { itemId: 'pocao_vida', chance: 12, qtdMax: 1 }] }],
+            itensChao: ['pedra'], mobsNativas: ['m1'] },
+          { id: 'c2', nome: 'Caverna Sem Nome', peso: 4, recursos: ['pedra'], blocosSubSolo: ['pedra'] },
+        ],
+        npcs: [
+          { id: 'n1', nome: 'Ferreiro Beto', mundoId: 'r9', descricao: 'Vende ferro e ferramentas.', loja: 'ferro:10:25, picareta:1:400' },
+        ],
+        achievements: [],
+        indice: {
+          itens: Object.fromEntries(ITENS.map((i) => [i.id, i])),
+          recipes: {}, monsters: {}, worldTemplates: {}, biomas: {}, chunks: {}, npcs: {},
+          skills: {}, classes: {}, achievements: {},
+        },
+      };
+
+      const jogo = new Phaser.Game({
+        type: Phaser.AUTO,
+        width: 1180,
+        height: 820,
+        parent: 'jogo',
+        pixelArt: true,
+        backgroundColor: '#0a0805',
+        physics: { default: 'arcade', arcade: { debug: false } },
+        scene: [BootScene, AjudaScene],
+      });
+
+      const esperar = (cond, ms = 20000) =>
+        new Promise((res, rej) => {
+          const t0 = Date.now();
+          const t = setInterval(() => {
+            let okNow = false;
+            try { okNow = Boolean(cond()); } catch (e) { clearInterval(t); rej(e); return; }
+            if (okNow) { clearInterval(t); res(); }
+            else if (Date.now() - t0 > ms) { clearInterval(t); rej(new Error('timeout')); }
+          }, 60);
+        });
+
+      (async () => {
+        await esperar(() => jogo.isRunning && jogo.scene.getScene('Ajuda'));
+
+        const cena = jogo.scene.getScene('Ajuda');
+        // Inicia pelo SceneManager: `scenePlugin.start` numa cena inativa é
+        // no-op silencioso e o init nunca roda.
+        jogo.scene.start('Ajuda', { uid: null, estado: null, catalogo: CATALOGO, isAdmin: true });
+        await esperar(() => cena.sys.isActive() && cena.catalogo);
+
+        cena.catalogo = CATALOGO;
+        cena.secao = 'itens';
+        cena.selecionado = CATALOGO.itens[0];
+        cena.detalheAberto = 'ferro';
+        cena.redimensionar();
+
+        const relatar = () => {
+          const info = referenciasDoItem(CATALOGO, 'ferro');
+          hud.innerHTML =
+            `consome em: <b>${info.consumo.length}</b> receitas · ` +
+            `produzido por: <b>${info.producao.length}</b> · ` +
+            `origens: <b>${info.ondeEncontrar.length}</b><br>` +
+            `propriedades: <b>${info.propriedades.length}</b><br>` +
+            `origens: ${info.ondeEncontrar.map((o) => o.tipo).join(', ')}<br>` +
+            `busca "ferro": <b>${cena.resultadosDe('itens', 'ferro').length}</b> · ` +
+            `"golem": <b>${cena.resultadosDe('itens', 'golem').length}</b> · ` +
+            `"forja": <b>${cena.resultadosDe('itens', 'forja').length}</b>`;
+        };
+        relatar();
+        setInterval(relatar, 1200);
+        window.__cena = () => cena;
+      })().catch((e) => {
+        hud.textContent = 'FALHA no harness: ' + (e && e.message ? e.message : e);
+      });
+
+      document.querySelectorAll('button').forEach((b) => {
+        b.addEventListener('click', () => {
+          const c = window.__cena && window.__cena();
+          if (!c) return;
+          const a = b.dataset.acao;
+          if (a === 'abrir') { c.detalheAberto = 'ferro'; c.redimensionar(); }
+          if (a === 'voltar') { c.detalheAberto = null; c.redimensionar(); }
+          if (a === 'busca-ferro') { c.busca = 'ferro'; c.redimensionar(); }
+          if (a === 'busca-golem') { c.busca = 'golem'; c.redimensionar(); }
+          if (a === 'busca-forgajava') { c.busca = 'forja'; c.redimensionar(); }
+        });
+      });
+    </script>
+  </body>
+</html>

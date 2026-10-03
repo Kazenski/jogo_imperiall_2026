@@ -2,6 +2,7 @@ import Phaser from 'phaser';
 import { OURO, PERGAMINHO } from '../constants.js';
 import { buscarItem, buscarClasse, buscarTalento, buscarMonstro, buscarReino } from '../core/catalogo.js';
 import { FAIXAS_NIVEL_ORBE } from '../core/enums.js';
+import { referenciasDoItem } from '../core/wiki.js';
 import {
   painel as uiPainel,
   botao,
@@ -87,6 +88,10 @@ export class AjudaScene extends Phaser.Scene {
     this.secao = 'controles';
     this.busca = '';
     this.selecionado = null; // registro aberto no painel da direita
+    // Id do item com a página de detalhe aberta. Separado de `selecionado`
+    // porque a ficha (cartão) e a página completa são dois estados: o jogador
+    // escolhe um item, vê a ficha, e aí clica para o cruzamento completo.
+    this.detalheAberto = null;
 
     this.raiz = this.add.container(0, 0);
     this.campos = [];
@@ -188,6 +193,7 @@ export class AjudaScene extends Phaser.Scene {
         if (v === this.busca) return;
         this.busca = v;
         this.selecionado = null;
+        this.detalheAberto = null;
         clearTimeout(this.timerBusca);
         this.timerBusca = setTimeout(() => this.redimensionar(), 160);
       },
@@ -195,6 +201,7 @@ export class AjudaScene extends Phaser.Scene {
         clearTimeout(this.timerBusca);
         this.busca = v;
         this.selecionado = null;
+        this.detalheAberto = null;
         // Buscar leva direto para Itens: é onde vive 90% do que se procura.
         if (v.trim()) this.secao = 'itens';
         this.redimensionar();
@@ -225,6 +232,7 @@ export class AjudaScene extends Phaser.Scene {
         this.secao = s.id;
         this.busca = '';
         this.selecionado = null;
+        this.detalheAberto = null;
         this.redimensionar();
       }, {
         largura: LARGURA_LISTA - 20,
@@ -305,6 +313,17 @@ export class AjudaScene extends Phaser.Scene {
 
     // Item selecionado à esquerda; lista rolável de registros abaixo.
     const sel = this.selecionado && todos.find((t) => t.id === this.selecionado.id);
+
+    // Item selecionado abre a PÁGINA COMPLETA, não a ficha de cartão.
+    //
+    // A ficha mostra nome, descrição e atributos — e param aí. A pergunta que o
+    // jogador faz ao clicar num item é outra: "o que eu faço COM ele?". Isso
+    // exige cruzar receitas, monstros, chunks, biomas e NPCs, o que não cabe no
+    // cartão e é informação que o painel não mostra em lugar nenhum.
+    if (sel && this.detalheAberto === sel.id) {
+      return this.paginaDetalheItem(sel, x, y, largura, altura, todos);
+    }
+
     const alturaCartao = Math.min(altura - 190, 250);
     this.desenharFicha(sel ?? todos[0], x + 4, y + 4, largura - 16, alturaCartao, !!sel);
 
@@ -324,7 +343,12 @@ export class AjudaScene extends Phaser.Scene {
       const r = todos[i];
       const ativo = (sel?.id ?? todos[inicio]?.id) === r.id;
       const b = botao(this, x + 2, ly, r.nome ?? r.id, () => {
+        // Clique num item ABRE a página de detalhe. Nos outros tipos o clique
+        // continua só selecionando: o cruzamento de "o que dá para fazer" só
+        // existe para itens.
         this.selecionado = r;
+        this.detalheAberto = this.secao === 'itens' ? r.id : null;
+        this.desloc = 0;
         this.redimensionar();
       }, {
         largura: largura - 6,
@@ -638,7 +662,250 @@ export class AjudaScene extends Phaser.Scene {
         .map(([k, v]) => `${k} ${v >= 0 ? '+' : ''}${v}`)
         .join(' '),
     ];
+
+    // O cruzamento entra na busca de ITENS.
+    //
+    // É o que faz "ferro" achar o item Ferro (óbvio) e também achar a Espada de
+    // Ferro e a Poção de Vida — porque elas são feitas com ferro. E buscar
+    // "Golem" acha o ferro, porque o Golem dropa. Sem isto, metade do
+    // conhecimento que a página de detalhe mostra seria invisível para a busca,
+    // e o jogador teria que saber o nome do item para chegar nele.
+    if (r?.tipo || this.secao === 'itens') {
+      try {
+        const info = referenciasDoItem(this.catalogo, r?.id);
+        if (info?.consumo?.length) {
+          partes.push(
+            ...info.consumo.map(
+              (c) => `${c.receita} ${c.estacao} ${c.outros.map((o) => o.nome).join(' ')}`,
+            ),
+          );
+        }
+        if (info?.producao?.length) {
+          partes.push(...info.producao.map((p) => `${p.receita} ${p.estacao}`));
+        }
+        if (info?.ondeEncontrar?.length) {
+          partes.push(...info.ondeEncontrar.map((o) => `${o.titulo} ${o.detalhe}`));
+        }
+      } catch {
+        // Um item com dado quebrado não pode derrubar a busca inteira.
+      }
+    }
+
     return partes.filter(Boolean).join(' · ');
+  }
+
+  // ---------- página de detalhe de um item ----------
+
+  /**
+   * Tudo sobre um item, em colunas, com rolagem.
+   *
+   * Três colunas porque é a leitura que o jogador faz: O QUE É (propriedades),
+   * COMO SE FAZ (receitas que usam e que produzem) e ONDE SE ACHA (mundo,
+   * bioma, chunk, baú, monstro, loja).
+   *
+   * As seções vazias são omitidas de propósito: uma coluna "Como se faz" com
+   * "nenhuma receita usa pedra" é ruído. Mas `vazio()` no fim é honesto — o
+   * jogador precisa saber se a busca não achou ou se realmente não existe.
+   */
+  paginaDetalheItem(item, x, y, largura, altura, todos) {
+    const info = referenciasDoItem(this.catalogo, item.id);
+    const colunas = Math.max(2, Math.min(3, Math.floor(largura / 300)));
+    const vao = 12;
+    const larguraCol = (largura - vao * (colunas - 1)) / colunas;
+
+    // Botão de voltar: a página ocupa a lista inteira, então sem ele o
+    // jogador fica preso aqui.
+    //
+    // `botao()` devolve `{ container, largura }` — o GameObject é `.container`.
+    // Passar o objeto inteiro para `Container.add` estoura com
+    // "gameObject.once is not a function", que não aponta para a causa.
+    this.raiz.add(
+      botao(this, x + largura - 116, y, '← Voltar à lista', () => {
+        this.detalheAberto = null;
+        this.redimensionar();
+      }, { largura: 112, altura: 24, tamanho: '11px' }).container,
+    );
+
+    this.raiz.add(
+      uiTitulo(this, x, y + 4, String(item.nome ?? item.id), '20px')
+        .setOrigin(0, 0)
+        .setWordWrapWidth(largura - 130),
+    );
+
+    let topo = y + 34;
+    const descricao = String(item.descricao ?? '').trim();
+    if (descricao) {
+      const alt = Math.min(78, descricao.length * 0.42 + 14);
+      this.raiz.add(
+        uiTexto(this, x, topo, descricao, {
+          fontSize: '12px',
+          color: PERGAMINHO,
+          wordWrap: { width: largura - 20 },
+          lineSpacing: 3,
+        })
+          .setOrigin(0, 0)
+          .setFixedSize(largura - 20, alt)
+          .setAlpha(0.92),
+      );
+      topo += alt + 8;
+    }
+
+    const grupos = [];
+
+    if (info.propriedades.length) {
+      grupos.push({
+        titulo: 'O que é',
+        cor: OURO,
+        linhas: info.propriedades.map(([r, v]) => `${r}: ${v}`),
+      });
+    }
+
+    if (info.consumo.length) {
+      grupos.push({
+        titulo: 'Usado para fazer',
+        cor: 0x8fbf72,
+        linhas: info.consumo.map((c) => {
+          const outros = c.outros.length
+            ? ` (+ ${c.outros.map((o) => `${o.nome} x${o.qtd}`).join(', ')})`
+            : '';
+          const aviso = c.outros.some((o) => o.desconhecido) ? '  ⚠ ingrediente não cadastrado' : '';
+          return `${c.quantidade}x · ${c.receita} — ${c.estacao}, nv ${c.nivelMin}+${outros}${aviso}`;
+        }),
+      });
+    }
+
+    if (info.producao.length) {
+      grupos.push({
+        titulo: 'Produzido por',
+        cor: 0x7fbfe0,
+        linhas: info.producao.map((p) => {
+          const tempo = p.segundos ? `, ${p.segundos}s` : '';
+          const poder = p.custoPoder ? `, ${p.custoPoder} poder` : '';
+          return `${p.quantidade}x · ${p.receita} — ${p.estacao}, nv ${p.nivelMin}+${tempo}${poder}`;
+        }),
+      });
+    }
+
+    if (info.ondeEncontrar.length) {
+      grupos.push({
+        titulo: 'Onde achar',
+        cor: 0xd9b06a,
+        linhas: info.ondeEncontrar.map((o) => {
+          const extras = [];
+          if (o.chance) extras.push(`${o.chance}%`);
+          if (o.quantidade) extras.push(`x${o.quantidade}`);
+          if (o.preco) extras.push(`${o.preco} ouro`);
+          if (o.nivel) extras.push(`nv ${o.nivel}+`);
+          const sufixo = extras.length ? ` (${extras.join(', ')})` : '';
+          return `${o.titulo} — ${o.detalhe}${sufixo}`;
+        }),
+      });
+    }
+
+    // Ordena por assunto: o que é, como se faz, onde se acha.
+    const ordem = ['O que é', 'Usado para fazer', 'Produzido por', 'Onde achar'];
+    grupos.sort((a, b) => ordem.indexOf(a.titulo) - ordem.indexOf(b.titulo));
+
+    // Altura REAL de cada grupo, medida.
+    //
+    // Estimar 15px por linha é o que atropelava o texto: uma linha que quebra
+    // ocupa duas, e a seguinte era desenhada por cima. Medir com o próprio
+    // Phaser é o que resolve — inclusive quando o admin escreve uma descrição
+    // de três linhas e o nome do item é enorme.
+    const larguraTexto = larguraCol - 16;
+    const ALTURA_TITULO = 24;
+    const ESPACO_LINHA = 4;
+    const RODAPE = 10;
+
+    const medidos = grupos.map((g) => {
+      const textos = g.linhas.map(
+        (l) =>
+          this.add
+            .text(0, 0, `• ${l}`, {
+              fontSize: '11px',
+              color: PERGAMINHO,
+              wordWrap: { width: larguraTexto },
+              lineSpacing: 2,
+            })
+            .setOrigin(0, 0)
+            .setAlpha(0.9),
+      );
+      const conteudo = textos.reduce((soma, t) => soma + t.height, 0);
+      const espaco = Math.max(0, textos.length - 1) * ESPACO_LINHA;
+      return { grupo: g, textos, altura: ALTURA_TITULO + conteudo + espaco + RODAPE };
+    });
+
+    if (!grupos.length) {
+      grupos.push({
+        titulo: 'Sem informação',
+        cor: PERGAMINHO,
+        linhas: [
+          'Nenhuma receita, monstro, chunk, bioma ou loja menciona este item.',
+          'O administrador ainda pode cadastrar isso no painel (F2).',
+        ],
+      });
+    }
+
+    // Distribui os grupos pelas colunas, equilibrando a altura MEDIDA.
+    const alturas = medidos.map((m) => m.altura);
+    const alturasPorCol = new Array(colunas).fill(0);
+    const porCol = Array.from({ length: colunas }, () => []);
+    for (let i = 0; i < medidos.length; i += 1) {
+      const menor = alturasPorCol.indexOf(Math.min(...alturasPorCol));
+      porCol[menor].push(i);
+      alturasPorCol[menor] += alturas[i];
+    }
+
+    const disponivel = altura - (topo - y) - 8;
+
+    for (let c = 0; c < colunas; c += 1) {
+      const cx = x + c * (larguraCol + vao);
+      let cy = topo;
+
+      // Uma coluna pode não caber inteira: o resto vira "mais abaixo", com o nome.
+      for (const gi of porCol[c]) {
+        const m = medidos[gi];
+        const g = m.grupo;
+
+        if (cy - topo + m.altura > disponivel) {
+          const resto = porCol[c]
+            .slice(porCol[c].indexOf(gi))
+            .map((k) => `${medidos[k].grupo.titulo} (${medidos[k].grupo.linhas.length})`)
+            .join(', ');
+          if (resto) {
+            this.raiz.add(
+              uiTexto(this, cx, cy + 4, `mais abaixo: ${resto}`, {
+                fontSize: '10px',
+                wordWrap: { width: larguraCol },
+                color: PERGAMINHO,
+              })
+                .setOrigin(0, 0)
+                .setAlpha(0.6),
+            );
+          }
+          break;
+        }
+
+        this.raiz.add(this.add.rectangle(cx, cy, larguraCol, m.altura, 0x16110c, 0.7).setOrigin(0, 0));
+        this.raiz.add(
+          uiTexto(this, cx + 8, cy + 6, g.titulo, { fontSize: '12px', color: g.cor })
+            .setOrigin(0, 0),
+        );
+
+        let ly = cy + ALTURA_TITULO;
+        for (const t of m.textos) {
+          t.setPosition(cx + 8, ly);
+          this.raiz.add(t);
+          ly += t.height + ESPACO_LINHA;
+        }
+        cy += m.altura + vao;
+      }
+    }
+
+    this.status(
+      `${todos.length} registro(s) · ${info.producao.length} receita(s) produzem · ` +
+        `${info.consumo.length} usam · ${info.ondeEncontrar.length} origem(es)`,
+    );
   }
 
   // ---------- página de controles ----------
