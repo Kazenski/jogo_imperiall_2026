@@ -8,6 +8,86 @@ caminho mais rápido é relatar com o que você estava fazendo na tela.
 
 ---
 
+## Correção — os menus da wiki saíam do painel
+
+*v0.1.4 · Outubro de 2026*
+
+### O que acontecia
+
+Na wiki, os botões de "Controles / Itens / Talentos / …" apareciam **fora do
+painel**, parte deles cortando a borda esquerda da tela. O botão "Fechar"
+também ficava cortado à direita.
+
+Medido antes da correção, com a janela em 1180×820: o painel começa em x=16 e os
+botões de menu iam de **x=-82** a 166 — 98px para fora, parte deles com
+coordenada negativa, ou seja, fora da tela. O "Fechar" ia até x=1215, e o painel
+acabava em 1164.
+
+### Por quê
+
+`botao()` centraliza em x/y por padrão (`origem: [0.5, 0.5]`). Quem posiciona
+dentro de um painel escreve `botao(this, x + 10, ly, …)`, lendo como canto
+superior esquerdo. Metade da largura sai para fora — e como a largura passa de
+100px, isso é invisível no código e evidente na tela.
+
+### O que mudou
+
+- Toda chamada de `botao()` na wiki declara `origem: [0, 0]`.
+- O botão "Fechar" passa a ser posicionado pela **constante** `LARGURA_FECHAR`,
+  não por `x0 + w - 24` (que nunca cabia, com ou sem o bug).
+- A coluna de seções tem **passo adaptativo**: encolhe até 20px e, se ainda não
+  couber, rola com ▲▼. Antes, 8 seções com passo fixo de 30 cortavam
+  "Conquistas" ao meio em janela baixa.
+
+### Três defeitos que estavam escondidos atrás do transbordo
+
+**1. `alinhamento: 'left'` não fazia nada.** A fórmula era
+`padding + (largura - padding * 2) / 2`, que é exatamente `largura / 2` — o
+centro. Nenhum botão do jogo estava alinhado à esquerda; todos estavam
+centralizados por acidente.
+
+Corrigi a fórmula e mudei o **default** de `alinhamento` para `'center'`. Isso
+mexe só nos 2 botões que pedem `'left'` explicitamente (os da wiki); os outros
+45 continuam centrais, exatamente como estavam.
+
+**2. Textos órfãos no canto da tela.** A página de detalhe mede a altura real das
+linhas criando um `Text` por linha com `this.add.text()` — que **já entra na
+display list**. Quando um grupo não cabia na coluna, os Texts ficavam órfãos em
+(0,0), empilhados no canto superior esquerdo por cima do menu. Como estavam na
+cena e não em `raiz`, nenhuma verificação de limites os via. Agora são
+destruídos.
+
+**3. "Onde achar" sumia e o aviso mentia.** O bloco era descartado com o texto
+"mais abaixo: Onde achar (6)" — mas não existe "abaixo", a página terminava ali.
+E o palpite de colunas ia na direção errada: quando falta **altura**, aumentar as
+colunas ajuda (usa a largura, que sobra); o código fazia o contrário. Agora
+mede a pior coluna de cada opção (3, 2 e 1) e fica com a menor.
+
+Também passei a **medir** a altura da descrição em vez de estimar por
+`length * 0.42` — a estimativa reservava 46px para um texto de uma linha (17px).
+
+### Resultado medido
+
+Em 13 tamanhos de janela testados: **zero transbordo e zero órfãos**. O conteúdo
+completo (11 linhas em 3 blocos) cabe até cerca de 900×500 e 1180×440. Abaixo
+disso não cabe mesmo, e a página agora diz o que não coube e pede uma janela
+maior — em vez de descartar em silêncio.
+
+### Known — não medido
+
+O mesmo padrão (`x = algo + número` sem `origem`) aparece em **19 chamadas de
+`botao()` em outras 7 cenas**: `StatusScene` (5), `TalentosScene` (4),
+`InventarioScene` (3), `CriacaoScene` (2), `TermosScene` (2), `WorldScene` (2),
+`FabricacaoScene` (1).
+
+**Nenhuma foi alterada.** O padrão é idêntico ao bug corrigido, mas isso não
+prova que sejam bug: pares simétricos (`StatusScene:408/431`,
+`TermosScene:191/198`, `InventarioScene:891/897`) são centralização de propósito.
+Só medindo as caixas na tela se decide. `npm run test:layout` imprime a lista
+atualizada.
+
+---
+
 ## A wiki agora responde "o que eu faço com isto?"
 
 *v0.1.3 · Outubro de 2026*

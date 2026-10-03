@@ -14,8 +14,9 @@
     "test:terreno": "node testes/terreno.mjs",
     "test:integridade": "node testes/integridade.mjs",
     "test:wiki": "node testes/wiki.mjs",
+    "test:layout": "node testes/layout.mjs",
     "test:storage": "firebase emulators:exec --only auth,firestore,storage --project demo-jogo \"node testes/storage-regras.mjs\"",
-    "test:tudo": "npm run test && npm run test:painel && npm run test:chunks && npm run test:terreno && npm run test:integridade && npm run test:wiki"
+    "test:tudo": "npm run test && npm run test:painel && npm run test:chunks && npm run test:terreno && npm run test:integridade && npm run test:wiki && npm run test:layout"
   },
   "dependencies": {
     "firebase": "^12.19.0",

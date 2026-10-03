@@ -574,24 +574,25 @@ export class AjudaScene extends Phaser.Scene {
     }
     ty += 22;
 
-    // Descrição do administrador
+    // Descrição do administrador.
+    //
+    // Altura medida, pelo mesmo motivo da página de detalhe: estimar por
+    // `length * 0.55` reservava bem mais espaço do que o texto ocupava, e o
+    // "Ao extrair" e as linhas técnicas desciam com um vão embaixo.
     const descricao = String(registro.descricao ?? '').trim();
     if (descricao) {
-      const alturaDesc = Math.min(
-        Math.max(34, y + altura - ty - 18),
-        descricao.length * 0.55 + 8,
-      );
-      this.raiz.add(
-        uiTexto(this, tx, ty, descricao, {
-          fontSize: '12px',
-          color: PERGAMINHO,
-          wordWrap: { width: tw },
-          lineSpacing: 3,
-        })
-          .setOrigin(0, 0)
-          .setFixedSize(tw, alturaDesc)
-          .setAlpha(0.92),
-      );
+      const texto = uiTexto(this, tx, ty, descricao, {
+        fontSize: '12px',
+        color: PERGAMINHO,
+        wordWrap: { width: tw },
+        lineSpacing: 3,
+      })
+        .setOrigin(0, 0)
+        .setAlpha(0.92);
+
+      const alturaDesc = Math.min(Math.max(34, y + altura - ty - 18), texto.height);
+      texto.setFixedSize(tw, alturaDesc);
+      this.raiz.add(texto);
     }
 
     // Detalhe técnico: o que o admin NÃO escreveu em texto.
@@ -797,9 +798,14 @@ export class AjudaScene extends Phaser.Scene {
    */
   paginaDetalheItem(item, x, y, largura, altura, todos) {
     const info = referenciasDoItem(this.catalogo, item.id);
-    const colunas = Math.max(2, Math.min(3, Math.floor(largura / 300)));
     const vao = 12;
-    const larguraCol = (largura - vao * (colunas - 1)) / colunas;
+
+    // O número de colunas NÃO é decidido aqui: é o resultado de uma tentativa.
+    // Ver o bloco que escolhe, depois do texto e da descrição.
+    let colunas = 1;
+    let larguraCol = largura;
+    let medidos = [];
+    let porCol = [[]];
 
     // Botão de voltar: a página ocupa a lista inteira, então sem ele o
     // jogador fica preso aqui.
@@ -823,18 +829,25 @@ export class AjudaScene extends Phaser.Scene {
     let topo = y + 34;
     const descricao = String(item.descricao ?? '').trim();
     if (descricao) {
-      const alt = Math.min(78, descricao.length * 0.42 + 14);
-      this.raiz.add(
-        uiTexto(this, x, topo, descricao, {
-          fontSize: '12px',
-          color: PERGAMINHO,
-          wordWrap: { width: largura - 20 },
-          lineSpacing: 3,
-        })
-          .setOrigin(0, 0)
-          .setFixedSize(largura - 20, alt)
-          .setAlpha(0.92),
-      );
+      // Altura MEDIDA, como nas linhas dos grupos.
+      //
+      // A estimativa `descricao.length * 0.42 + 14` reservava 46px para um
+      // texto de uma linha só (17px de verdade). Numa janela baixa esse
+      // desperdício de 29px é a diferença entre "Onde achar" caber e ser
+      // descartado. O teto de 78px continua valendo para o admin que escreve
+      // um texto enorme.
+      const texto = uiTexto(this, x, topo, descricao, {
+        fontSize: '12px',
+        color: PERGAMINHO,
+        wordWrap: { width: largura - 20 },
+        lineSpacing: 3,
+      })
+        .setOrigin(0, 0)
+        .setAlpha(0.92);
+
+      const alt = Math.min(78, texto.height);
+      texto.setFixedSize(largura - 20, alt);
+      this.raiz.add(texto);
       topo += alt + 8;
     }
 
@@ -912,51 +925,117 @@ export class AjudaScene extends Phaser.Scene {
     const ordem = ['O que é', 'Usado para fazer', 'Produzido por', 'Onde achar'];
     grupos.sort((a, b) => ordem.indexOf(a.titulo) - ordem.indexOf(b.titulo));
 
-    // Altura REAL de cada grupo, medida.
+    // ALTURA REAL de cada grupo, medida com o próprio Phaser.
     //
     // Estimar 15px por linha é o que atropelava o texto: uma linha que quebra
-    // ocupa duas, e a seguinte era desenhada por cima. Medir com o próprio
-    // Phaser é o que resolve — inclusive quando o admin escreve uma descrição
-    // de três linhas e o nome do item é enorme.
+    // ocupa duas, e a seguinte era desenhada por cima. Medir resolve — inclusive
+    // quando o admin escreve uma descrição de três linhas e o nome do item é
+    // enorme.
     //
     // `this.add.text()` JÁ ADICIONA o objeto à display list da cena. Por isso os
-    // textos medidos que acabam não cabendo em nenhuma coluna precisam ser
-    // destruídos no fim — senão ficam órfãos em (0,0), empilhados no canto
-    // superior esquerdo do canvas, por cima do menu.
-    const larguraTexto = larguraCol - 16;
+    // textos medidos que acabarem não cabendo precisam ser destruídos — senão
+    // ficam órfãos em (0,0), empilhados no canto superior esquerdo do canvas,
+    // por cima do menu. `descartarMedidos` faz isso.
     const ALTURA_TITULO = 24;
     const ESPACO_LINHA = 4;
     const RODAPE = 10;
 
-    const medidos = grupos.map((g) => {
-      const textos = g.linhas.map(
-        (l) =>
-          this.add
-            .text(0, 0, `• ${l}`, {
-              fontSize: '11px',
-              color: PERGAMINHO,
-              wordWrap: { width: larguraTexto },
-              lineSpacing: 2,
-            })
-            .setOrigin(0, 0)
-            .setAlpha(0.9),
-      );
-      const conteudo = textos.reduce((soma, t) => soma + t.height, 0);
-      const espaco = Math.max(0, textos.length - 1) * ESPACO_LINHA;
-      return { grupo: g, textos, altura: ALTURA_TITULO + conteudo + espaco + RODAPE };
-    });
+    /**
+     * Cria um Text por linha e devolve a altura real do grupo.
+     * @returns {Array<{grupo: object, textos: Array<object>, altura: number}>}
+     */
+    const medirGrupos = (listaGrupos, larguraTexto) =>
+      listaGrupos.map((g) => {
+        const textos = g.linhas.map(
+          (l) =>
+            this.add
+              .text(0, 0, `• ${l}`, {
+                fontSize: '11px',
+                color: PERGAMINHO,
+                wordWrap: { width: larguraTexto },
+                lineSpacing: 2,
+              })
+              .setOrigin(0, 0)
+              .setAlpha(0.9),
+        );
+        const conteudo = textos.reduce((soma, t) => soma + t.height, 0);
+        const espaco = Math.max(0, textos.length - 1) * ESPACO_LINHA;
+        return { grupo: g, textos, altura: ALTURA_TITULO + conteudo + espaco + RODAPE };
+      });
 
-    // Distribui os grupos pelas colunas, equilibrando a altura MEDIDA.
-    const alturas = medidos.map((m) => m.altura);
-    const alturasPorCol = new Array(colunas).fill(0);
-    const porCol = Array.from({ length: colunas }, () => []);
-    for (let i = 0; i < medidos.length; i += 1) {
-      const menor = alturasPorCol.indexOf(Math.min(...alturasPorCol));
-      porCol[menor].push(i);
-      alturasPorCol[menor] += alturas[i];
-    }
+    const descartarMedidos = (medida) => {
+      for (const m of medida) for (const t of m.textos) t.destroy();
+    };
+
+    /**
+     * Distribui os grupos pelas colunas, sempre colocando o próximo na coluna
+     * mais curta. Não cria, não move e não destrói nada.
+     */
+    const posicionarGrupos = (medida, nColunas) => {
+      const alturasPorCol = new Array(nColunas).fill(0);
+      const distribuicao = Array.from({ length: nColunas }, () => []);
+
+      for (let i = 0; i < medida.length; i += 1) {
+        const menor = alturasPorCol.indexOf(Math.min(...alturasPorCol));
+        distribuicao[menor].push(i);
+        alturasPorCol[menor] += medida[i].altura + vao;
+      }
+      return distribuicao;
+    };
 
     const disponivel = altura - (topo - y) - 8;
+
+    // Escolhe o número de colunas MEDINDO todas as opções, e fica com a melhor.
+    //
+    // Aqui os dois efeitos brigam. Coluna estreita quebra cada linha em três, e
+    // o grupo fica ALTO. Coluna larga empilha os grupos, e a coluna fica ALTA.
+    // Os dois crescem conforme a coluna ocupa mais altura — que é justamente o
+    // recurso escasso.
+    //
+    // Por isso o palpite "3 colunas, depois 2, depois 1, parando na primeira que
+    // coubesse" é errado: ele reduz as colunas quando o problema é altura, e
+    // empilhava mais conteúdo numa coluna mais alta. Numa janela baixa ele
+    // descartava o bloco "Onde achar" — justamente a informação que o jogador
+    // foi pedir.
+    //
+    // A escolha certa é medir a PIOR coluna de cada opção e ficar com a menor.
+    // Desempate vai para mais colunas, que aproveita melhor a largura.
+    const maxColunas = Math.max(1, Math.min(4, Math.floor(largura / 170)));
+    let melhor = null;
+
+    for (let cols = maxColunas; cols >= 1; cols -= 1) {
+      const lc = (largura - vao * (cols - 1)) / cols;
+      const medida = medirGrupos(grupos, lc - 16);
+      const pos = posicionarGrupos(medida, cols);
+
+      // A PIOR coluna é o que decide: basta uma coluna alta para o conteúdo não
+      // caber, e a mais alta quase sempre é a primeira a encher.
+      const piorColuna = Math.max(
+        0,
+        ...pos.map((col) => col.reduce((soma, gi) => soma + medida[gi].altura + vao, vao) - vao),
+      );
+
+      const cabe = piorColuna <= disponivel;
+      const melhora =
+        !melhor ||
+        (cabe && !melhor.cabe) ||
+        (cabe === melhor.cabe && (piorColuna < melhor.pior || (piorColuna === melhor.pior && cols > melhor.colunas)));
+
+      if (melhora) {
+        if (melhor) descartarMedidos(melhor.medida);
+        melhor = { medida, porCol: pos, colunas: cols, larguraCol: lc, cabe, pior: piorColuna };
+      } else {
+        descartarMedidos(medida);
+      }
+    }
+
+    colunas = melhor.colunas;
+    larguraCol = melhor.larguraCol;
+    medidos = melhor.medida;
+    porCol = melhor.porCol;
+
+    // Mesmo com uma coluna só pode faltar espaço (janela muito baixa). Nesses
+    // casos quem avisa é o laço de desenho abaixo, nomeando o que não coube.
 
     // Textos que entraram em `raiz`. O que sobrar fora daqui é destruído no fim.
     const desenhados = new Set();
@@ -965,7 +1044,8 @@ export class AjudaScene extends Phaser.Scene {
       const cx = x + c * (larguraCol + vao);
       let cy = topo;
 
-      // Uma coluna pode não caber inteira: o resto vira "mais abaixo", com o nome.
+      // Uma coluna pode não caber inteira. O aviso precisa dizer o que está
+      // faltando, não "mais abaixo": não existe "abaixo", a página termina aí.
       for (const gi of porCol[c]) {
         const m = medidos[gi];
         const g = m.grupo;
@@ -973,18 +1053,25 @@ export class AjudaScene extends Phaser.Scene {
         if (cy - topo + m.altura > disponivel) {
           const resto = porCol[c]
             .slice(porCol[c].indexOf(gi))
-            .map((k) => `${medidos[k].grupo.titulo} (${medidos[k].grupo.linhas.length})`)
-            .join(', ');
-          if (resto) {
+            .map((k) => `${medidos[k].grupo.titulo} (${medidos[k].grupo.linhas.length} linha(s))`);
+          if (resto.length) {
             this.raiz.add(
-              uiTexto(this, cx, cy + 4, `mais abaixo: ${resto}`, {
-                fontSize: '10px',
-                wordWrap: { width: larguraCol },
-                color: PERGAMINHO,
-              })
+              uiTexto(
+                this,
+                cx,
+                cy + 4,
+                `não coube nesta janela: ${resto.join(', ')}\n` +
+                  'aumente a janela do navegador para ver o resto.',
+                {
+                  fontSize: '10px',
+                  wordWrap: { width: larguraCol },
+                  color: 0xd08a6a,
+                  lineSpacing: 2,
+                },
+              )
                 .setOrigin(0, 0)
-                .setAlpha(0.6),
-            );
+                .setAlpha(0.85),
+              );
           }
           break;
         }
