@@ -37,6 +37,14 @@ desktop.ini
 # Pasting de dist/ para servir localmente em outro prefixo. Nunca versionar.
 _preview/
 
+# Arquivos de trabalho descartaveis.
+#
+# Scripts de edicao pontual que eu crio, rodo e apago (`_algo.mjs`), e a
+# mensagem de commit escrita em disco (`_msg.txt`). Sem isto, um `git add -A`
+# antes de apagar o arquivo leva o rascunho para dentro do commit.
+_*.mjs
+_*.txt
+
 # Logs dos emuladores do Firebase (gerados por emulators:exec).
 *-debug.log
 firestore-debug.log
